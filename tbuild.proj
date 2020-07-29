@@ -1,0 +1,11 @@
+tm parsetcl {
+	version 0.1
+
+	files {
+		library/*.tcl
+	}
+
+	platform tcl
+}
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4

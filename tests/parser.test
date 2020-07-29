@@ -1,0 +1,93 @@
+package require tcltest
+namespace import ::tcltest::*
+
+tcl::tm::path add ~/.tbuild/repo/tm/tcl
+tcl::tm::path add tm/tcl
+lappend auto_path ~/local/lib
+
+try {
+	package require parsetcl
+	namespace import ::parsetcl::*
+} on error {errmsg options} {
+	puts stderr "Error loading parsetcl: [dict get $options -errorinfo]"
+	exit 1
+}
+
+package require rl_json
+namespace import ::rl_json::*
+package require rltest
+
+test debug-1.1 {Ensure all the procs in the namespace parse (given all the brace quoting involved, this is iffy)} -body { #<<<
+	expr {"expr2stack" in [lmap e [info commands ::parsetcl::*] {namespace tail $e}]}
+} -result 1
+#>>>
+test parser-1.1 {hello, world} -body { #<<<
+	set parse_tree	[parse_script {puts "hello, world"}]
+	#puts [json pretty $parse_tree]
+	rltest compare_json $parse_tree {
+		[
+			"SCRIPT",
+			[
+				[
+					[
+						[
+							"TEXT",
+							"puts",
+							null,
+							0,
+							{"toklength": 4}
+						]
+					],
+					[
+						[
+							"SPACE",
+							" ",
+							null,
+							4,
+							{"toklength": 1}
+						],
+						[
+							"SYNTAX",
+							"\"",
+							null,
+							5,
+							{"toklength": 1}
+						],
+						[
+							"TEXT",
+							"hello, world",
+							null,
+							6,
+							{"toklength": 12}
+						],
+						[
+							"SYNTAX",
+							"\"",
+							null,
+							18,
+							{"toklength": 1}
+						],
+						[
+							"END",
+							null,
+							null,
+							19,
+							{"toklength": 0}
+						]
+					]
+				]
+			],
+			null,
+			0,
+			{"toklength": 19}
+		]
+	}
+} -cleanup {
+	unset -nocomplain parse_tree
+} -result match
+#>>>
+
+
+::tcltest::cleanupTests
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> shiftwidth=4 ts=4

@@ -1,120 +1,392 @@
-#!/usr/bin/env tclsh8.7
-# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4
-
-if {[file system [info script]] eq "native"} {
-	package require platform
-
-	foreach platform [platform::patterns [platform::identify]] {
-		set tm_path		[file join $env(HOME) .tbuild repo tm $platform]
-		set pkg_path	[file join $env(HOME) .tbuild repo pkg $platform]
-		if {[file exists $tm_path]} {
-			tcl::tm::path add $tm_path
-		}
-		if {[file exists $pkg_path]} {
-			lappend auto_path $pkg_path
-		}
-	}
-}
-
 package require rl_json
-interp alias {} json {} ::rl_json::json
-
+package require parse_args
 
 namespace eval ::parsetcl {
-	variable emitstack	{}
-
+	namespace export *
 	namespace path {
 		::tcl::mathop
+		::rl_json
+		::parse_args
 	}
-
-	# Helpers <<<
-	proc ++post v { # Post-increment $v.  Works like v++ in c / js <<<
-		upvar 1 $v $v
-		set pre	$v
-		incr v
-		set pre
-	}
-
-	#>>>
-	# Helpers >>>
 
 	proc closure {name args script} { # Fake closure for parse state variables <<<
-		tailcall proc $name $args "upvar 1 i i text text tokstart tokstart token token tokens tokens; $script"
+		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens; $script"
 	}
 
 	#>>>
 	proc closurelambda {l args} { # Fake closure lambda generator <<<
 		set script	[lindex $l 1]
-		lset l 1 "upvar 1 i i text text tokstart tokstart token token tokens tokens; $script"
+		lset l 1 "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens; $script"
 		list apply $l {*}$args
 	}
 
 	#>>>
 
+	proc char++ {} { # Returns the character at [string index $text $i] and post-increments i <<<
+		upvar 1 i i text text
+		try {
+			string index $text $i
+		} finally {
+			incr i
+		}
+	}
+
+	#>>>
 	proc toklength tok { #<<<
-		switch -exact -- [json get $tok 0] {
+		switch -exact -- [tok get $tok type] {
 			INDEX {
 				set len	0
-				foreach t [json get $tok 1] {
-					incr len	[toklength $t]
+				if {[tok type $tok parts] eq "string"} {
+					incr len	[string length [tok get $parts str]]
+				} else {
+					json foreach part [tok extract $tok parts] {
+						incr len	[toklength $part]
+					}
 				}
 				set len
 			}
 
 			SCRIPT {
-				set tokens	[all_script_tokens [json get $tok 1]]
+				set tokens	[all_script_tokens [tok extract $tok parts]]
 				set len		0
-				foreach t $tokens {
+				json foreach t $tokens {
 					incr len	[toklength $t]
 				}
 				set len
 			}
 
 			default {
-				string length [json get $tok 1]
+				if {![tok exists $tok str]} {return 0}
+				string length [tok get $tok str]
 			}
 		}
 	}
 
 	#>>>
-	closure emit args { #<<<
-		set tok	[switch -- [llength $args] {
-			2 {
-				lassign $args toktype detail
-				json template {
-					{
-						"0":	"~S:toktype",
-						"3":	"~N:tokstart",
-						"meta":	{}
+	switch legacy {
+		legacy {
+			proc maketok {type args} { #<<<
+				parse_args [list $type] {
+					type	{-required -enum {
+						TEXT
+						SPACE
+						VAR
+						ARRAY
+						INDEX
+						ESCAPE
+						END
+						SCRIPT
+						COMMENT
+						EXPAND
+						SYNTAX
+						OPERAND
+						OPERATOR
+						LPAREN
+						RPAREN
+						FLOAT
+						INTEGER
+						MATHFUNC
+						BOOL
+						EXPR
+						ARG
+						QUOTED
+						BRACED
+						SCRIPTARG
+						EXPRARG
+						SUBSTARG
+						LISTARG
+					}}
+				}
+				parse_args $args {
+					-idx	{-# {Index into the source text for the first character of this token}}
+					-str	{-# {The source characters of the token}}
+					-parts	{-# {The sub-parts of this token}}
+					-length	{-# {The length of characters this token spans in the source}}
+					-norm	{-# {The normalized form of the token}}
+				}
+
+				switch -- [info exists parts],[info exists str] {
+					1,1 {error "Can only specify one of -parts or -str"}
+					1,0 {set detail $parts}
+					0,1 {set detail [json string $str]}
+					0,0 {set detail null}
+				}
+				set tok	[json template {
+					["~S:type", "~J:detail", "~N:norm", "~N:idx", {}]
+				}]
+				set toklength	[toklength $tok]
+				json set tok 4 toklength $toklength
+				set tok
+			}
+
+			#>>>
+			proc tok {verb tok args} { #<<<
+				set path	[lrange $args 0 end-1]
+				set part	[lindex $args end]
+				switch -exact -- $part {
+					type	{json $verb $tok {*}$path 0}
+					str -
+					commands -
+					parts	{json $verb $tok {*}$path 1}
+					norm	{json $verb $tok {*}$path 2}
+					idx		{json $verb $tok {*}$path 3}
+					length	{json $verb $tok {*}$path 4 toklength}
+					default {
+						error "Invalid token part \"$part\""
 					}
 				}
 			}
 
-			3 {
-				lassign $args toktype detail crep
-				json template {
-					{
-						"0":	"~S:toktype",
-						"2":	"~S:crep",
-						"3":	"~N:tokstart",
-						"meta":	{}
+			#>>>
+			proc all_script_tokens commands { #<<<
+				set tokens	{[]}
+
+				json foreach command $commands {
+					json foreach word $command {
+						json foreach token $word {
+							json set tokens end+1 $token
+						}
+					}
+				}
+
+				set tokens
+			}
+
+			#>>>
+			proc new_command {} { #<<<
+				return {[]}
+			}
+
+			#>>>
+			proc word_add_tok {v tok} { #<<<
+				upvar 1 $v word
+				json set word end+1 $tok
+			}
+
+			#>>>
+			proc command_append_tok {v tok} { #<<<
+				upvar 1 $v command
+				json set command end end+1 $tok
+			}
+
+			#>>>
+			proc command_add_word {v word} { #<<<
+				upvar 1 $v command
+				json set command end+1 $word
+			}
+
+			#>>>
+			proc append_command {v command} { #<<<
+				upvar 1 $v commands
+				# TODO: extract first word:
+				#	- record whether it is a static command name known at compile time, or dynamic
+				#	- if static, record the command name text
+				json set commands end+1 $command
+			}
+
+			#>>>
+		}
+		test {
+			proc maketok {type args} { #<<<
+				parse_args [list $type] {
+					type	{-required -enum {
+						TEXT
+						SPACE
+						VAR
+						ARRAY
+						INDEX
+						ESCAPE
+						END
+						SCRIPT
+						COMMENT
+						EXPAND
+						SYNTAX
+						OPERAND
+						OPERATOR
+						LPAREN
+						RPAREN
+						FLOAT
+						INTEGER
+						MATHFUNC
+						BOOL
+						EXPR
+						ARG
+						QUOTED
+						BRACED
+						SCRIPTARG
+						EXPRARG
+						SUBSTARG
+						LISTARG
+					}}
+				}
+				parse_args $args {
+					-idx	{-# {Index into the source text for the first character of this token}}
+					-str	{-# {The source characters of the token}}
+					-parts	{-# {The sub-parts of this token}}
+					-length	{-# {The length of characters this token spans in the source}}
+					-norm	{-# {The normalized form of the token}}
+				}
+
+				switch -exact -- $type {
+					SCRIPT {
+						switch -- [info exists parts],[info exists str] {
+							1,0 {}
+							default {error "SCRIPT requires -part, and can't specify -str"}
+						}
+						set tok	[json template {
+							{
+								"type":		"SCRIPT",
+								"commands":	"~J:parts",
+								"idx":		"~N:idx"
+							}
+						}]
+
+						if {![info exists length]} {
+							set length	[toklength $tok]
+						}
+						json set tok length $length
+						set tok
+					}
+
+					INDEX {
+						switch -- [info exists parts],[info exists str] {
+							1,0 {}
+							default {error "INDEX requires -part, and can't specify -str"}
+						}
+						set tok	[json template {
+							{
+								"type":		"INDEX",
+								"parts":	"~J:parts",
+								"idx":		"~N:idx"
+							}
+						}]
+
+						if {![info exists length]} {
+							set length	[toklength $tok]
+						}
+						json set tok length $length
+						set tok
+					}
+
+					default {
+						if {[info exists parts]} {
+							error "-part can only be specified for SCRIPT or INDEX"
+						}
+
+						set tok	[json template {
+							{
+								"type":		"~S:type",
+								"idx":		"~N:idx"
+							}
+						}]
+						if {[info exists str]} {
+							json set tok str $str
+						}
+						if {[info exists norm]} {
+							json set tok norm $norm		;# Is it safe to use the implicit type handling?
+						}
+
+						if {![info exists length]} {
+							set length	[toklength $tok]
+						}
+						json set tok length $length
+					}
+				}
+
+				set tok
+			}
+
+			#>>>
+			proc tok {verb tok args} { #<<<
+				set path	[lrange $args 0 end-1]
+				set part	[lindex $args end]
+				switch -exact -- $part {
+					str {
+						if {[json get $tok {*}$path type] in {SCRIPT INDEX}} {
+							error "Invalid token part \"$part\""
+						}
+						json $verb $tok {*}$path $part
+					}
+					type - norm - idx - length {
+						json $verb $tok {*}$path $part
+					}
+					commands -
+					parts {
+						switch -exact -- [json get $tok {*}$path type] {
+							SCRIPT	{set part	commands}
+							INDEX	{set path	parts}
+							default	{error "invalid token part \"$part\""}
+						}
+						json $verb $tok {*}$path $part
+					}
+					default {
+						error "Invalid token part \"$part\""
 					}
 				}
 			}
 
-			default {
-				error "wrong # of args, must be 2 or 3"
+			#>>>
+			proc all_script_tokens commands { #<<<
+				set tokens	{[]}
+
+				json foreach command $commands {
+					json foreach word [json extract $command words] {
+						json foreach token $word {
+							json set tokens end+1 $token
+						}
+					}
+				}
+
+				set tokens
 			}
-		}]
-		json set tok 1 $detail	;# $detail may be a string or JSON
-		# tokstart += (tok.meta.toklength = toklength(tok));  Always 0 (tok.meta.toklength is a const null here)
+
+			#>>>
+			proc new_command {} { #<<<
+				return {{"words":[]}}
+			}
+
+			#>>>
+			proc word_add_tok {v tok} { #<<<
+				upvar 1 $v word
+				json set word end+1 $tok
+			}
+
+			#>>>
+			proc command_append_tok {v tok} { #<<<
+				upvar 1 $v command
+				json set command words end end+1 $tok
+			}
+
+			#>>>
+			proc command_add_word {v word} { #<<<
+				upvar 1 $v command
+				json set command words end+1 $word
+			}
+
+			#>>>
+			proc append_command {v command} { #<<<
+				upvar 1 $v commands
+				# TODO: extract first word:
+				#	- record whether it is a static command name known at compile time, or dynamic
+				#	- if static, record the command name text
+				json set commands end+1 $command
+			}
+
+			#>>>
+		}
+		default {error "Unhandled type"}
+	}
+	closure emit {type args} { #<<<
+		set tok	[maketok $type -idx $tokstart {*}$args]
+		incr tokstart [tok get $tok length]
 		json set tokens end+1 $tok
+		set token	{}
 	}
 
 	#>>>
 	closure emit_waiting type { #<<<
 		if {$token ne ""} {
-			emit $type [json string $token]
+			emit $type -str $token
 		}
 	}
 
@@ -124,7 +396,7 @@ namespace eval ::parsetcl {
 		set last	[expr {$first + $len eq "" ? 1 : $len}]
 		emit_waiting TEXT
 		set subtext	[string range $text $first $last]
-		emit ESCAPE [json string $subtext] $crep
+		emit ESCAPE -str $subtext -norm $crep
 		set i	[+ $last 1]
 	}
 
@@ -138,7 +410,7 @@ namespace eval ::parsetcl {
 	closure parse_escape {} { #<<<
 		set first	[+ $i 1]
 
-		switch -exact -- [string index $text [++post i]] {
+		switch -exact -- [char++] {
 			{}  {append token "\\"}
 			a   {charcode 0x7}
 			b   {charcode 0x8}
@@ -149,7 +421,7 @@ namespace eval ::parsetcl {
 			v   {charcode 0xb}
 
 			x {
-				if {[regexp -start $i {^[0-9A-Fa-f]+/} $text escapechars]} {
+				if {[regexp -start $i {\A[0-9A-Fa-f]+/} $text escapechars]} {
 					charcode [& 0x$escapechars 0xff] [+ 1 [string length $escapechars]]
 				} else {
 					literal x
@@ -157,7 +429,7 @@ namespace eval ::parsetcl {
 			}
 
 			u {
-				if {[regexp -start $i {^[0-9A-Fa-f]{1,4}/} $text escapechars]} {
+				if {[regexp -start $i {\A[0-9A-Fa-f]{1,4}/} $text escapechars]} {
 					charcode 0x$escapechars [+ 1 [string length $escapechars]]
 				} else {
 					literal u
@@ -166,7 +438,7 @@ namespace eval ::parsetcl {
 
 			"\n" {
 				# Line folding
-				if {[regexp -start i {^[ \t]*} $text match]} {
+				if {[regexp -start i {\A[ \t]*} $text match]} {
 					literal { } [+ 1 [string length $match]]
 				} else {
 					literal { }
@@ -176,7 +448,7 @@ namespace eval ::parsetcl {
 			default {
 				incr i -1
 
-				if {[regexp -start $i {^[0-7]{1,3}} $text escapechars]} {
+				if {[regexp -start $i {\A[0-7]{1,3}} $text escapechars]} {
 					set acc	0
 					foreach char [split $escapechars {}] {
 						set acc		[expr {($acc << 3) + $char}]
@@ -195,33 +467,35 @@ namespace eval ::parsetcl {
 		set cmds	{[]}
 
 		emit_waiting TEXT
-		set c	[string index $text [++post i]]
-		emit SYNTAX [json string $c]
+		emit SYNTAX -str [char++]
 		set savetokstart	$tokstart
 		while 1 {
 			set savetokens	$tokens
-			set word		[get_word [eq $cmd ""] true]
+			set word		[get_word [== 0 [json length $cmd]] true]
 			set tokens		$savetokens
 			json set cmd end+1 $word
 			set lasttoken	[json extract $word end]
 			if {[json isnull $lasttoken]} {
 				throw [list PARSETCL PARSE COMMAND_NOT_TERMINATED $i $text $ofs] "Cannot find end of command"
 			}
-			if {[json get $lasttoken 0] eq "END"} {
-				json set cmds end+1 $cmd
+			if {[tok get $lasttoken type] eq "END"} {
+				json set cmds end+1 [json template {
+					{
+						"words": "~J:cmd"
+					}
+				}]
 				set cmd	{[]}
-				if {[json get $lasttoken 1] eq "\]" || [json get $lasttoken 1] eq ""} break
+				if {[tok get $lasttoken str] in {"\]" ""}} break
 			}
 		}
 		set tokstart	$savetokstart
-		emit SCRIPT $cmds
+		emit SCRIPT -parts $cmds
 	}
 
 	#>>>
 	closure parse_index {} { # Only called from within parse_variable <<<
 		# escape, variable and command substs apply here
-		set c	[string index $text [++post i]]
-		emit SYNTAX [json string $c]
+		emit SYNTAX -str [char++]
 		set saved_tokens	$tokens
 		set saved_tokstart	$tokstart
 		set tokens			{[]}
@@ -237,9 +511,8 @@ namespace eval ::parsetcl {
 					set indextokens		$tokens
 					set tokens			$saved_tokens
 					set tokstart		$saved_tokstart
-					emit INDEX $indextokens
-					set c	[string index $text [++post i]]
-					emit SYNTAX [json string $c]
+					emit INDEX -parts $indextokens
+					emit SYNTAX -str [char++]
 					return
 				}
 
@@ -257,18 +530,16 @@ namespace eval ::parsetcl {
 
 	#>>>
 	closure parse_variable {} { #<<<
-		if {![regexp -start [+ $i 1] {^(?:[a-zA-Z0-9_{(]|::)} $text]} {
-			append token	[string index $text [++post i]]
+		if {![regexp -start [+ $i 1] {\A(?:[a-zA-Z0-9_\{(]|::)} $text]} {
+			append token	[char++]
 			return
 		}
 
 		emit_waiting TEXT
-		set c	[string index $text [++post i]]
-		emit SYNTAX [json string $c]
+		emit SYNTAX -str [char++]
 
 		if {[string index $text $i] eq "\{"} {
-			set c	[string index $text [++post i]]
-			emit SYNTAX [json string $c]
+			emit SYNTAX -str [char++]
 			set idx	[string first "\}" $text $i]
 			if {$idx == -1} {
 				throw [list PARSETCL PARSE MISSING_VARIABLE_CLOSE_BRACE $i $text $ofs] "missing close-brace for variable name"
@@ -280,16 +551,15 @@ namespace eval ::parsetcl {
 				set i		[- $i [string length $token]]
 				set token	[string range $token 0 $idx-1]
 				incr i		[string length $token]
-				emit ARRAY [json string $token]
+				emit ARRAY -str $token
 				parse_index
 				set i	$save_i
 			} else {
-				emit VAR [json string $token]
+				emit VAR -str $token
 			}
-			set c	[string index $text [++post i]]
-			emit SYNTAX [json string $c]
+			emit SYNTAX -str [char++]
 		} else {
-			regexp -start $i {^[a-zA-Z_0-9:]*} $text token
+			regexp -start $i {\A[a-zA-Z_0-9:]*} $text token
 			# : alone is a name terminator
 			set idx		[string first : [string map {:: __} $token]]
 			if {$idx > 0} {
@@ -297,9 +567,9 @@ namespace eval ::parsetcl {
 			}
 			incr i	[string length $token]
 			if {[string index $text $i] ne "("} {
-				emit VAR [json string $token]
+				emit VAR -str $token
 			} else {
-				emit ARRAY [json string $token]
+				emit ARRAY -str $token
 				parse_index
 			}
 		}
@@ -309,7 +579,7 @@ namespace eval ::parsetcl {
 	closure emit_fold len { # Only called from parse_braced <<<
 		upvar 1 from from
 		set subtext		[string range $text $i [+ $i $len -1]]
-		emit ESCAPE [json string $subtext] { }
+		emit ESCAPE -str $subtext -crep { }
 		incr i $len
 		set from	$i
 	}
@@ -319,8 +589,7 @@ namespace eval ::parsetcl {
 		set depth	1
 		set emitted	false
 
-		set c	[string index $text [++post i]]
-		emit SYNTAX [json string $c]
+		emit SYNTAX -str [char++]
 		set from	$i
 
 		while {$depth} {
@@ -339,7 +608,7 @@ namespace eval ::parsetcl {
 				# line fold
 				if {$i > $from} {
 					set subtext		[string range $text $from $i-1]
-					emit TEXT [json string $subtext]
+					emit TEXT -str $subtext
 				}
 				set m3len	[- {*}$m3 -1]
 				emit_fold $m4len
@@ -356,21 +625,19 @@ namespace eval ::parsetcl {
 		incr i -1
 		if {!$emitted || $i > $from} {
 			set subtext		[string range $text $from $i-1]
-			emit TEXT [json string $subtext]
+			emit TEXT -str $subtext
 		}
-		set c	[string index $text [++post i]]
-		emit SYNTAX [json string $c]
+		emit SYNTAX -str [char++]
 
 		set tokens
 	}
 
 	#>>>
-	closure parse_combined {quoted incmdsubst ignore_trailing} { #<<<
+	closure parse_combined {quoted incmdsubst {ignore_trailing false}} { #<<<
 		set start	$i
 
 		if {$quoted} {
-			set c	[string index $text [++post i]]
-			emit SYNTAX [json string $c]
+			emit SYNTAX -str [char++]
 		}
 
 		while 1 {
@@ -384,30 +651,30 @@ namespace eval ::parsetcl {
 
 					"\"" {
 						if {$incmdsubst} {
-							set re	{[\s;\]]}
+							set re	{\A(?:[\s;\]]|\\\n)}
 						} else {
-							set re	{[\s;]}
+							set re	{\A(?:[\s;]|\\\n)}
 						}
-						set starti	[+ $i 1]
+						set next_i	[+ $i 1]
+
 						if {
 							!$ignore_trailing &&
-							[string index $text $start_i] ne "" &&
-							![regexp -start $start_i {^\\\n} $text] &&
-							![regexp -start $start_i $re]
+							$next_i < $textlen &&
+							![regexp -start $next_i $re $text]
 						} {
-							set lineno	[string length [regsub -all {[^\n]+} [string range $text 0 $i-1] {}]]
+							set lineno	[string length [regsub -all {[\A\n]+} [string range $text 0 $i-1] {}]]
 							#puts "i: $i, ([string range $text 0 99]) line: $lineno: [string range $text $i-5 $i+4]"
-							throw [list PARSETCL PARSE EXTRA_CHARS_AFTER_CLOSE_QUOTE $starti $text $ofs] "extra characters after close-quote"
+							throw [list PARSETCL PARSE EXTRA_CHARS_AFTER_CLOSE_QUOTE $next_i $text $ofs] "extra characters after close-quote"
 						}
 						if {$i == $start + 1} {
 							# Need to manually emit rather than using
 							# emit_waiting because we still need it if
 							# token eq {}
-							emit TEXT [json string $token]
+							emit TEXT -str $token
 						} else {
 							emit_waiting TEXT
 						}
-						emit SYNTAX [json string [string index $text [++post i]]]
+						emit SYNTAX -str [char++]
 						return $tokens
 					}
 
@@ -419,14 +686,14 @@ namespace eval ::parsetcl {
 				switch -exact -- [string index $text $i] {
 					{} {
 						emit_waiting TEXT
-						emit END {""}
+						emit END
 						return $tokens
 					}
 
 					"\n" - ";" {
 						emit_waiting TEXT
-						set token	[string index $text [++post i]]
-						emit END [json string $token]
+						set token	[char++]
+						emit END -str $token
 						return $tokens
 					}
 
@@ -457,18 +724,18 @@ namespace eval ::parsetcl {
 					"\$"   parse_variable
 					"\["   parse_commands
 					"\]" {
-						set c	[string index $text [++post i]]
+						set c	[char++]
 						if {$incmdsubst && !$quoted} {
 							emit_waiting TEXT
 							set token	$c
-							emit END [json string $token]
+							emit END -str $token
 							return $tokens
 						}
 						append token $c
 					}
 
 					default {
-						append token	[string index $text [++post i]]
+						append token	[char++]
 					}
 				}
 			}
@@ -480,9 +747,9 @@ namespace eval ::parsetcl {
 		set tokens	{[]}
 		set token	{}
 		if {$first} {
-			set re	{^(?:[\t \n]*\\\n[\t \n]*)|^[\t \n]+}
+			set re	{\A(?:[\t \n]*\\\n[\t \n]*)|\A[\t \n]+}
 		} else {
-			set re	{^(?:[\t ]*\\\n[\t ]*)|^[\t ]+}
+			set re	{\A(?:[\t ]*\\\n[\t ]*)|\A[\t ]+}
 		}
 
 		# Consume any leading whitespace / comments if first word
@@ -517,14 +784,14 @@ namespace eval ::parsetcl {
 						break
 					}
 				}
-				emit COMMENT [json string $token]
+				emit COMMENT -str $token
 			}
 			set m	{}
 		}
 
 		# handle {*}
-		if {$c eq "\{" && [regexp -start $i {^{\*}} $text]} {
-			emit EXPAND {"{*}"}
+		if {$c eq "\{" && [regexp -start $i {\A{\*}} $text]} {
+			emit EXPAND -str "{*}"
 			incr i 3
 			set c	[string index $text $i]
 		}
@@ -535,7 +802,7 @@ namespace eval ::parsetcl {
 			"\""  {return [parse_combined true $incmdsubst]}
 			"\]" {
 				if {$incmdsubst} {
-					emit END [json string [string index $text [++post i]]]
+					emit END -str [char++]
 					return $tokens
 				}
 				return [parse_combined false $incmdsubst]
@@ -547,7 +814,7 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	closure emit_token {type value subtype crep) { # Only called from parse_subexpr <<<
+	closure emit_token {type value subtype crep} { # Only called from parse_subexpr <<<
 		if {$value eq "" && $type ne "END"} {
 			throw [list PARSETCL PARSE EMPTY_TOKEN $i $text $ofs] "Refusing to emit a token of length 0"
 		}
@@ -623,22 +890,22 @@ namespace eval ::parsetcl {
 
 		# <|> are technically the same precedence as <=|>=, <=|>= needs to be matched against first
 		set operators	{
-			{^(?:~|!(?=[^=]))} 1
-			{^\*\*}            2
-			{^[*\/%]}          2
-			{^[\-+]}           2
-			{^(?:<<|>>)}       2
-			{^(?:<=|>=)}       2
-			{^(?:<|>)}         2
-			{^(?:==|!=)}       2
-			{^(?:ne|eq)}       2
-			{^(?:in|ni)}       2
-			{^&(?!&)}          2
-			{^\^}              2
-			{^\|(?!\|)}        2
-			{^&&}              2
-			{^\|\|}            2
-			{^[?:]}            3
+			{\A(?:~|!(?=[^=]))} 1
+			{\A\*\*}            2
+			{\A[*\/%]}          2
+			{\A[\-+]}           2
+			{\A(?:<<|>>)}       2
+			{\A(?:<=|>=)}       2
+			{\A(?:<|>)}         2
+			{\A(?:==|!=)}       2
+			{\A(?:ne|eq)}       2
+			{\A(?:in|ni)}       2
+			{\A&(?!&)}          2
+			{\A\^}              2
+			{\A\|(?!\|)}        2
+			{\A&&}              2
+			{\A\|\|}            2
+			{\A[?:]}            3
 		}
 
 		set textlen	[string length $text]
@@ -646,20 +913,20 @@ namespace eval ::parsetcl {
 			#set here	[string range $text $i end]		;# TODO: replace with relative indexing later
 
 			# line folds
-			if {[regexp -start $i {^\\\n\s+} $text m]} {
+			if {[regexp -start $i {\A\\\n\s+} $text m]} {
 				emit_token SPACE $m
 				continue
 			}
 
 			# whitespace
-			if {[regexp -start $i {^\s+} $text m]} {
+			if {[regexp -start $i {\A\s+} $text m]} {
 				emit_token SPACE $m
 				continue
 			}
 
 			if {!$expecting_operator} {
 				# Unitary + and -
-				if {[regexp -start $i {^[\-+]} $text m]} {
+				if {[regexp -start $i {\A[\-+]} $text m]} {
 					emit_token OPERATOR $m 0 1
 					continue
 				}
@@ -682,7 +949,7 @@ namespace eval ::parsetcl {
 			set expecting_operator	true
 
 			# number
-			if {[regexp -start $i -nocase {^(?:([\-+]?)(Inf(?:inity)?)|(NaN))\M} $text m m1]} {
+			if {[regexp -start $i -nocase {\A(?:([\-+]?)(Inf(?:inity)?)|(NaN))\M} $text m m1]} {
 				if {[string match -nocase ?n* $m]} {
 					emit_token OPERAND $m FLOAT [expr {$m}]
 				} else {
@@ -692,17 +959,17 @@ namespace eval ::parsetcl {
 			}
 
 			if {
-				[regexp -start $i -nocase {^([\-+])?(0x)([\dA-F]+)} $text m] ||
-				[regexp -start $i -nocase {^([\-+])?(0b)([01]+)} $text m] ||
-				[regexp -start $i -nocase {^([\-+])?(0o)([0-7]+)} $text m]
+				[regexp -start $i -nocase {\A([\-+])?(0x)([\dA-F]+)} $text m] ||
+				[regexp -start $i -nocase {\A([\-+])?(0b)([01]+)} $text m] ||
+				[regexp -start $i -nocase {\A([\-+])?(0o)([0-7]+)} $text m]
 			} {
 				# TODO: Bignum support
 				emit_token OPERAND $m INTEGER [expr {$m+0}]
 				continue
 			}
 			if {
-				[regexp -start $i -nocase {^[\-+]?\d+(?:(\.)(?:\d+)?)?(e[\-+]?\d+)?} $text m m1 m2] ||
-				[regexp -start $i -nocase {^[\-+]?(\.)\d+(e[\-+]?\d+)?} $text m m1 m2]
+				[regexp -start $i -nocase {\A[\-+]?\d+(?:(\.)(?:\d+)?)?(e[\-+]?\d+)?} $text m m1 m2] ||
+				[regexp -start $i -nocase {\A[\-+]?(\.)\d+(e[\-+]?\d+)?} $text m m1 m2]
 			} {
 				if {$m1 eq "" && $m eq ""} {
 					emit_token OPERAND $m INTEGER [expr {$m}]
@@ -723,7 +990,7 @@ namespace eval ::parsetcl {
 				"\$" {
 					sub_parse VAR parse_variable [closurelambda {tokens {
 						json foreach t $tokens {
-							switch -exact -- [json get $t 0] {
+							switch -exact -- [tok get $t type] {
 								VAR {
 									set d	[json extract $t 1]
 									return [json template {["~J:d"]}]
@@ -733,7 +1000,7 @@ namespace eval ::parsetcl {
 								}
 								INDEX {
 									set index	[json extract $t 1]
-									if {[json length $index] == 1 && [json get $index 0 0] eq "TEXT"} {
+									if {[json length $index] == 1 && [tok get $index 0 type] eq "TEXT"} {
 										# Optimize the common case where the
 										# index is a simple string
 										set indexstr	[json extract $index 0 1]
@@ -757,11 +1024,11 @@ namespace eval ::parsetcl {
 				"\[" {
 					sub_parse SCRIPT parse_commands [closurelambda {tokens {
 						json foreach t $tokens {
-							if {[json get $t 0] eq "SCRIPT"} {
+							if {[tok get $t type] eq "SCRIPT"} {
 								return $t
-							} elseif {[json get $t 0] eq "SYNTAX"} {
+							} elseif {[tok get $t type] eq "SYNTAX"} {
 								# Dirty hack to inject the [ syntax token
-								emit_token SYNTAX [json get $t 1]
+								emit_token SYNTAX [tok get $t str]
 							}
 						}
 						throw [list PARSETCL PARSE NO_SCRIPT_FOUND $i $text $ofs] "No script found"
@@ -785,21 +1052,21 @@ namespace eval ::parsetcl {
 				}
 			}
 			# mathfunc
-			if {[regexp -start $i {^(\w+)(\s*)?\(} $text m m1 m2]} {
+			if {[regexp -start $i {\A(\w+)(\s*)?\(} $text m m1 m2]} {
 				parse_mathfunc $m1 $m2
 				continue
 			}
 			# boolean
-			if {[regexp -start $i -nocase {^(?:tr(?:ue?)?|yes?|on)\M} $text m]} {
+			if {[regexp -start $i -nocase {\A(?:tr(?:ue?)?|yes?|on)\M} $text m]} {
 				emit_token OPERAND $m BOOL true
 				continue
 			}
-			if {[regexp -start $i -nocase {^(?:fa(?:l(?:se?)?)?|no|off?)\M} $text m]} {
+			if {[regexp -start $i -nocase {\A(?:fa(?:l(?:se?)?)?|no|off?)\M} $text m]} {
 				emit_token OPERAND $m BOOL false
 				continue
 			}
 			# invalid bareword
-			if {[regexp -start $i {^\w+\M} $text m]} {
+			if {[regexp -start $i {\A\w+\M} $text m]} {
 				throw [list PARSETCL PARSE EXPR_BAREWORD $i $text $ofs] "invalid bareword \"$m\""
 			}
 			#puts stderr "Cannot parse expression portion: \"[string range $text $i end]]\""
@@ -833,7 +1100,7 @@ namespace eval ::parsetcl {
 		set depth	1
 
 		if {$cx ne ""} {
-			emit SYNTAX [string index $text [++post i]]
+			emit SYNTAX -str [char++]
 		}
 
 		while 1 {
@@ -848,7 +1115,7 @@ namespace eval ::parsetcl {
 							throw [list PARSETCL PARSE LIST_ELEMENT_TRAILING_GARBAGE [+ $i 1] $text $ofs] "list element in quotes followed by \"[string index $text $i+1]\" instead of space"
 						}
 						emit_waiting TEXT
-						emit SYNTAX [json string [string index $text [++post i]]]
+						emit SYNTAX -str [char++]
 						return $tokens
 					}
 				}
@@ -863,12 +1130,12 @@ namespace eval ::parsetcl {
 					}
 
 					"\}" {
-						if ([incr depth -1] == 0} {
+						if {[incr depth -1] == 0} {
 							if {![is_whitespace [string index $text $i+1]]} {
 								throw [list PARSETCL PARSE LIST_ELEMENT_TRAILING_GARBAGE [+ $i 1] $text $ofs] "list element in braces followed by \"[string index $text $i+1]\" instead of space"
 							}
 							emit_waiting TEXT
-							emit SYNTAX [json string [string index $text [++post i]]]
+							emit SYNTAX -str [char++]
 							return $tokens
 						}
 					}
@@ -880,25 +1147,25 @@ namespace eval ::parsetcl {
 
 			if {[string index $text $i] eq "\\"} {
 				if {$cx eq "\{"} {
-					append token	[string index $text [++post i]]
+					append token	[char++]
 					if {[string index $text $i] eq ""} {
 						throw [list PARSETCL PARSE MISSING_CLOSE_BRACE $start $text $ofs] "missing \}"
 					}
-					append token	[string index $text [++post i]]
+					append token	[char++]
 				} else {
 					parse_escape
 				}
 			} else {
-				append token	[string index $text [++post i]]
+				append token	[char++]
 			}
 		}
 	}
 
 	#>>>
-	closure tokenize_list { #<<<
+	closure tokenize_list {} { #<<<
 		while 1 {
-			if {[regexp -start $i {^[\t\n\v\f\r ]+} $text m]} {
-				emit SPACE $m
+			if {[regexp -start $i {\A[\t\n\v\f\r ]+} $text m]} {
+				emit SPACE -str $m
 				incr i	[string length $m]
 			}
 
@@ -923,7 +1190,7 @@ namespace eval ::parsetcl {
 
 	#>>>
 	proc find_line_no {source ofs} { #<<<
-		set line	[string length [regsub -all [string range $source 0 $ofs-1] {[^\n]+} {}]]
+		set line	[string length [regsub -all [string range $source 0 $ofs-1] {[\A\n]+} {}]]
 		+ $line 1
 	}
 
@@ -938,22 +1205,9 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc all_script_tokens commands { #<<<
-		set tokens	{[]}
-
-		json foreach command $commands {
-			json foreach word $command {
-				json foreach token $word {
-					json set tokens end+1 $token
-				}
-			}
-		}
-	}
-
-	#>>>
 	proc word_empty tokens { #<<<
 		json foreach token $tokens {
-			switch -exact -- [json get $token 0] {
+			switch -exact -- [tok get $token type] {
 				TEXT - ESCAPE - VAR - ARRAY - SCRIPT - EXPAND {
 					return false
 				}
@@ -964,11 +1218,11 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc parse {text mode ofs} { #<<<
+	proc parse {text mode {ofs 0}} { #<<<
 		set i			0
 		set token		{}
 		set tokens		{[]}
-		set command		{[]}
+		set command		[new_command]
 		set commands	{[]}
 		#set matches		{}
 		set tokstart	[expr {$ofs eq "" ? 0 : $ofs}]
@@ -977,28 +1231,27 @@ namespace eval ::parsetcl {
 		switch -exact -- $mode {
 			script {
 				while {$i < $textlen} {
-					set word	[get_word [== 0 [llength $command]] false]
-					if {$i >= $textlen && [json length $word] && [json get $word end 0] ne "END"} {
-						json set word end+1 [json template {
-							["END", "", null, "~N:i"]
-						}]
+					#set was	$i	;# DEBUG
+					set word	[get_word [== 0 [json length $command]] false]
+					if {$i >= $textlen && [json length $word] && [tok get $word end type] ne "END"} {
+						word_add_tok word [maketok END -idx $i]
 					}
 					if {[json length $command] > 1 && [word_empty $word]} {
 						# Prevent a fake word being added to the command only
 						# containing non-word tokens
-						json set command end end+1 $word
+						command_append_tok command $word
 					} else {
-						json set command end+1 $word
+						command_add_word command $word
 					}
+					#if {$i == $was} {error "No progress made: $i"}	;# DEBUG
 					set lasttoken	[json extract $word end]
-					if {[json get $lasttoken 0] eq "END"} {
-						json set commands end+1 $command
-						set command {[]}
+					if {![json isnull $lasttoken] && [tok get $lasttoken type] eq "END"} {
+						append_command commands $command
+						set command	[new_command]
+						#set command {[]}
 					}
 				}
-				return [json template {
-					["SCRIPT", "~J:commands", null, 0]
-				}]
+				return [maketok SCRIPT -parts $commands -idx $ofs]
 			}
 			expr {
 				parse_subexpr
@@ -1032,7 +1285,7 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc parse_script {text ofs} { #<<<
+	proc parse_script {text {ofs 0}} { #<<<
 		# First unfold - happens even in brace quoted words
 		# This has been pushed down to parse_escape, parse_braced and parse_subexpr
 		#regsub -all {\\\n\s*} $text { } text
@@ -1040,17 +1293,17 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc parse_expr {text ofs} { #<<<
+	proc parse_expr {text {ofs 0}} { #<<<
 		tailcall parse $text expr $ofs
 	}
 
 	#>>>
-	proc parse_list {text ofs} { #<<<
+	proc parse_list {text {ofs 0}} { #<<<
 		tailcall parse $text list $ofs
 	}
 
 	#>>>
-	proc parse_subst {text ofs} { #<<<
+	proc parse_subst {text {ofs 0}} { #<<<
 		tailcall parse $text subst $ofs
 	}
 
