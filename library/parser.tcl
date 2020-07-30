@@ -1,22 +1,12 @@
-package require rl_json
-package require parse_args
-
 namespace eval ::parsetcl {
-	namespace export *
-	namespace path {
-		::tcl::mathop
-		::rl_json
-		::parse_args
-	}
-
 	proc closure {name args script} { # Fake closure for parse state variables <<<
-		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens; $script"
+		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline; $script"
 	}
 
 	#>>>
 	proc closurelambda {l args} { # Fake closure lambda generator <<<
 		set script	[lindex $l 1]
-		lset l 1 "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens; $script"
+		lset l 1 "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline; $script"
 		list apply $l {*}$args
 	}
 
@@ -29,6 +19,14 @@ namespace eval ::parsetcl {
 		} finally {
 			incr i
 		}
+	}
+
+	#>>>
+	closure idx2line idx { # Fast lookup of the line number for $idx into $text <<<
+		set line	[lsearch -sorted -increasing -bisect -integer $linestarts $idx]
+		if {$line == -1} {error "Invalid idx \"$idx\", before the start of the first line"}
+		set linestart	[lindex $linestarts $line]
+		list [+ $line $ofsline] [::tcl::mathfunc::max 0 [- $idx $linestart -1]]
 	}
 
 	#>>>
@@ -65,7 +63,7 @@ namespace eval ::parsetcl {
 	#>>>
 	switch legacy {
 		legacy {
-			proc maketok {type args} { #<<<
+			closure maketok {type args} { #<<<
 				parse_args [list $type] {
 					type	{-required -enum {
 						TEXT
@@ -111,8 +109,9 @@ namespace eval ::parsetcl {
 					0,1 {set detail [json string $str]}
 					0,0 {set detail null}
 				}
+				lassign [idx2line $idx] line char
 				set tok	[json template {
-					["~S:type", "~J:detail", "~N:norm", "~N:idx", {}]
+					["~S:type", "~J:detail", "~N:norm", "~N:idx", {"line": "~N:line", "char": "~N:char"}]
 				}]
 				set toklength	[toklength $tok]
 				json set tok 4 toklength $toklength
@@ -130,6 +129,8 @@ namespace eval ::parsetcl {
 					parts	{json $verb $tok {*}$path 1}
 					norm	{json $verb $tok {*}$path 2}
 					idx		{json $verb $tok {*}$path 3}
+					line	{json $verb $tok {*}$path 4 line}
+					char	{json $verb $tok {*}$path 4 char}
 					length	{json $verb $tok {*}$path 4 toklength}
 					default {
 						error "Invalid token part \"$part\""
@@ -187,7 +188,7 @@ namespace eval ::parsetcl {
 			#>>>
 		}
 		test {
-			proc maketok {type args} { #<<<
+			closure maketok {type args} { #<<<
 				parse_args [list $type] {
 					type	{-required -enum {
 						TEXT
@@ -227,17 +228,22 @@ namespace eval ::parsetcl {
 					-norm	{-# {The normalized form of the token}}
 				}
 
+				lassign [idx2line $idx] line char
+
 				switch -exact -- $type {
 					SCRIPT {
 						switch -- [info exists parts],[info exists str] {
 							1,0 {}
 							default {error "SCRIPT requires -part, and can't specify -str"}
 						}
+
 						set tok	[json template {
 							{
 								"type":		"SCRIPT",
 								"commands":	"~J:parts",
-								"idx":		"~N:idx"
+								"idx":		"~N:idx",
+								"line":		"~N:line",
+								"char":		"~N:char"
 							}
 						}]
 
@@ -257,7 +263,9 @@ namespace eval ::parsetcl {
 							{
 								"type":		"INDEX",
 								"parts":	"~J:parts",
-								"idx":		"~N:idx"
+								"idx":		"~N:idx",
+								"line":		"~N:line",
+								"char":		"~N:char"
 							}
 						}]
 
@@ -276,7 +284,9 @@ namespace eval ::parsetcl {
 						set tok	[json template {
 							{
 								"type":		"~S:type",
-								"idx":		"~N:idx"
+								"idx":		"~N:idx",
+								"line":		"~N:line",
+								"char":		"~N:char"
 							}
 						}]
 						if {[info exists str]} {
@@ -307,7 +317,73 @@ namespace eval ::parsetcl {
 						}
 						json $verb $tok {*}$path $part
 					}
-					type - norm - idx - length {
+					type - norm - idx - length - line - char {
+						json $verb $tok {*}$path $part
+					}
+					commands -
+					parts {
+						switch -exact -- [json get $tok {*}$path type] {
+							SCRIPT	{set part	commands}
+							INDEX	{set path	parts}
+							default	{error "invalid token part \"$part\""}
+						}
+						json $verb $tok {*}$path $part
+					}
+					default {
+						error "Invalid token part \"$part\""
+					}
+				}
+			}
+
+			#>>>
+			proc all_script_tokens commands { #<<<
+				set tokens	{[]}
+
+				json foreach command $commands {
+					json foreach word [json extract $command words] {
+						json foreach token $word {
+							json set tokens end+1 $token
+						}
+					}
+				}
+
+				set tokens
+			}
+
+			#>>>
+			proc new_command {} { #<<<
+				return {{"words":[]}}
+			}
+
+			#>>>
+			proc word_add_tok {v tok} { #<<<
+				upvar 1 $v word
+				json set word end+1 $tok
+			}
+
+			#>>>
+			proc command_append_tok {v tok} { #<<<
+				upvar 1 $v command
+				json set command words end end+1 $tok
+			}
+
+			#>>>
+			proc command_add_word {v word} { #<<<
+				upvar 1 $v command
+				json set command words end+1 $word
+			}
+
+			#>>>
+			proc append_command {v command} { #<<<
+				upvar 1 $v commands
+				# TODO: extract first word:
+				#	- record whether it is a static command name known at compile time, or dynamic
+				#	- if static, record the command name text
+				json set commands end+1 $command
+			}
+
+			#>>>
+		}
 						json $verb $tok {*}$path $part
 					}
 					commands -
@@ -1218,7 +1294,7 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc parse {text mode {ofs 0}} { #<<<
+	proc parse {text mode {ofs 0} {a_ofsline 1}} { #<<<
 		set i			0
 		set token		{}
 		set tokens		{[]}
@@ -1227,6 +1303,8 @@ namespace eval ::parsetcl {
 		#set matches		{}
 		set tokstart	[expr {$ofs eq "" ? 0 : $ofs}]
 		set textlen		[string length $text]
+		set linestarts	[list $tokstart {*}[lmap m [regexp -indices -all -inline {\n} $text] {+ [lindex $m 0] $ofs 1}]]
+		set ofsline		$a_ofsline
 
 		switch -exact -- $mode {
 			script {
@@ -1285,26 +1363,26 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc parse_script {text {ofs 0}} { #<<<
+	proc parse_script {text {ofs 0} {ofsline 1}} { #<<<
 		# First unfold - happens even in brace quoted words
 		# This has been pushed down to parse_escape, parse_braced and parse_subexpr
 		#regsub -all {\\\n\s*} $text { } text
-		tailcall parse $text script $ofs
+		tailcall parse $text script $ofs $ofsline
 	}
 
 	#>>>
-	proc parse_expr {text {ofs 0}} { #<<<
-		tailcall parse $text expr $ofs
+	proc parse_expr {text {ofs 0} {ofsline 1}} { #<<<
+		tailcall parse $text expr $ofs $ofsline
 	}
 
 	#>>>
-	proc parse_list {text {ofs 0}} { #<<<
-		tailcall parse $text list $ofs
+	proc parse_list {text {ofs 0} {ofsline 1}} { #<<<
+		tailcall parse $text list $ofs $ofsline
 	}
 
 	#>>>
-	proc parse_subst {text {ofs 0}} { #<<<
-		tailcall parse $text subst $ofs
+	proc parse_subst {text {ofs 0} {ofsline 1}} { #<<<
+		tailcall parse $text subst $ofs $ofsline
 	}
 
 	#>>>

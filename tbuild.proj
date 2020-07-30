@@ -1,7 +1,23 @@
 tm parsetcl {
 	version 0.1
 
+	init {
+		package require rl_json
+		package require parse_args
+		package require tdom
+
+		namespace eval ::parsetcl {
+			namespace export *
+			namespace path {
+				::tcl::mathop
+				::rl_json
+				::parse_args
+			}
+		}
+	}
+
 	files {
+		library/parser.tcl
 		library/*.tcl
 	}
 
