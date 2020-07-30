@@ -23,125 +23,35 @@ test debug-1.1 {Ensure all the procs in the namespace parse (given all the brace
 #>>>
 test parser-1.1 {hello, world} -body { #<<<
 	set parse_tree	[parse_script "puts \"hello, world\"\nfoo"]
-	#puts [json pretty $parse_tree]
-	rltest compare_json $parse_tree { //<<<
-		[
-			"SCRIPT",
-			[
-				[
-					[
-						[
-							"TEXT",
-							"puts",
-							null,
-							0,
-							{
-								"line":      1,
-								"char":      1,
-								"toklength": 4
-							}
-						]
-					],
-					[
-						[
-							"SPACE",
-							" ",
-							null,
-							4,
-							{
-								"line":      1,
-								"char":      5,
-								"toklength": 1
-							}
-						],
-						[
-							"SYNTAX",
-							"\"",
-							null,
-							5,
-							{
-								"line":      1,
-								"char":      6,
-								"toklength": 1
-							}
-						],
-						[
-							"TEXT",
-							"hello, world",
-							null,
-							6,
-							{
-								"line":      1,
-								"char":      7,
-								"toklength": 12
-							}
-						],
-						[
-							"SYNTAX",
-							"\"",
-							null,
-							18,
-							{
-								"line":      1,
-								"char":      19,
-								"toklength": 1
-							}
-						],
-						[
-							[
-								"END",
-								"\n",
-								null,
-								19,
-								{
-									"line":      1,
-									"char":      20,
-									"toklength": 1
-								}
-							]
-						]
-					]
-				],
-				[
-					[
-						[
-							"TEXT",
-							"foo",
-							null,
-							20,
-							{
-								"line":      2,
-								"char":      1,
-								"toklength": 3
-							}
-						],
-						[
-							"END",
-							null,
-							null,
-							23,
-							{
-								"line":      2,
-								"char":      4,
-								"toklength": 0
-							}
-						]
-					]
-				]
-			],
-			null,
-			0,
-			{
-				"line":      1,
-				"char":      1,
-				"toklength": 22
-			}
-		]
-	}
-	#>>>
+	#puts [$parse_tree asXML]
+	$parse_tree asXML
 } -cleanup {
+	if {[info exists parse_tree]} { $parse_tree delete }
 	unset -nocomplain parse_tree
-} -result match
+} -result {<tcl>
+    <script idx="0" line="1" char="1" length="23">
+        <command idx="0" line="1" char="1" name="puts" length="20">
+            <word idx="0" line="1" char="1" quoted="none" length="4">
+                <text idx="0" line="1" char="1" length="4">puts</text>
+            </word>
+            <space idx="4" line="1" char="5" length="1"> </space>
+            <word idx="5" line="1" char="6" quoted="quote" length="14">
+                <syntax idx="5" line="1" char="6" length="1">"</syntax>
+                <text idx="6" line="1" char="7" length="12">hello, world</text>
+                <syntax idx="18" line="1" char="19" length="1">"</syntax>
+            </word>
+            <end idx="19" line="1" char="20" length="1">
+</end>
+        </command>
+        <command idx="20" line="2" char="1" name="foo" length="3">
+            <word idx="20" line="2" char="1" quoted="none" length="3">
+                <text idx="20" line="2" char="1" length="3">foo</text>
+            </word>
+            <end idx="23" line="2" char="4" length="0"/>
+        </command>
+    </script>
+</tcl>
+}
 #>>>
 
 

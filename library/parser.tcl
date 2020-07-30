@@ -1,4 +1,48 @@
 namespace eval ::parsetcl {
+	namespace eval dom {
+		foreach tag {
+			script
+			command
+			word
+			arg
+			expr
+			list
+			subst
+
+			text
+			space
+			var
+			array
+			index
+			escape
+			end
+			comment
+			expand
+			syntax
+			operand
+			operator
+			lparen
+			rparen
+			float
+			integer
+			mathfunc
+			bool
+			expr
+			arg
+			quoted
+			braced
+			scriptarg
+			exprarg
+			substarg
+			listarg
+		} {
+			dom createNodeCmd -returnNodeCmd elementNode $tag
+			interp alias {} ::parsetcl::[string toupper $tag] {} [namespace current]::$tag
+		}
+		dom createNodeCmd textNode txt
+		dom createNodeCmd commentNode <!--
+	}
+
 	proc closure {name args script} { # Fake closure for parse state variables <<<
 		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline; $script"
 	}
@@ -37,7 +81,7 @@ namespace eval ::parsetcl {
 				if {[tok type $tok parts] eq "string"} {
 					incr len	[string length [tok get $parts str]]
 				} else {
-					json foreach part [tok extract $tok parts] {
+					foreach part [tok get $tok parts] {
 						incr len	[toklength $part]
 					}
 				}
@@ -45,7 +89,7 @@ namespace eval ::parsetcl {
 			}
 
 			SCRIPT {
-				set tokens	[all_script_tokens [tok extract $tok parts]]
+				set tokens	[all_script_tokens [tok get $tok commands]]
 				set len		0
 				json foreach t $tokens {
 					incr len	[toklength $t]
@@ -61,402 +105,122 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	switch legacy {
-		legacy {
-			closure maketok {type args} { #<<<
-				parse_args [list $type] {
-					type	{-required -enum {
-						TEXT
-						SPACE
-						VAR
-						ARRAY
-						INDEX
-						ESCAPE
-						END
-						SCRIPT
-						COMMENT
-						EXPAND
-						SYNTAX
-						OPERAND
-						OPERATOR
-						LPAREN
-						RPAREN
-						FLOAT
-						INTEGER
-						MATHFUNC
-						BOOL
-						EXPR
-						ARG
-						QUOTED
-						BRACED
-						SCRIPTARG
-						EXPRARG
-						SUBSTARG
-						LISTARG
-					}}
+	proc tok {verb tok args} { #<<<
+		set pathargs	[lrange $args 0 end-1]
+		set part		[lindex $args end]
+		if {[llength $pathargs] > 0} {
+			# Resolve the path
+			set path		[join [lmap e $pathargs {
+				if {[regexp {^end([+-].*)?$} $e - endofs]} {
+					return -level 0 "*\[last()$endofs\]"
+				} else {
+					incr e	;# 1-based numbering
+					return -level 0 "*\[$e\]"
 				}
-				parse_args $args {
-					-idx	{-# {Index into the source text for the first character of this token}}
-					-str	{-# {The source characters of the token}}
-					-parts	{-# {The sub-parts of this token}}
-					-length	{-# {The length of characters this token spans in the source}}
-					-norm	{-# {The normalized form of the token}}
-				}
-
-				switch -- [info exists parts],[info exists str] {
-					1,1 {error "Can only specify one of -parts or -str"}
-					1,0 {set detail $parts}
-					0,1 {set detail [json string $str]}
-					0,0 {set detail null}
-				}
-				lassign [idx2line $idx] line char
-				set tok	[json template {
-					["~S:type", "~J:detail", "~N:norm", "~N:idx", {"line": "~N:line", "char": "~N:char"}]
-				}]
-				set toklength	[toklength $tok]
-				json set tok 4 toklength $toklength
-				set tok
+			}] /]
+			set matches	[$tok selectNodes $path]
+			switch -exact -- [llength $matches] {
+				1		{}
+				0		{error "Path does not exist: $path"}
+				default	{error "Path names more than one node: $path"}
 			}
-
-			#>>>
-			proc tok {verb tok args} { #<<<
-				set path	[lrange $args 0 end-1]
-				set part	[lindex $args end]
-				switch -exact -- $part {
-					type	{json $verb $tok {*}$path 0}
-					str -
-					commands -
-					parts	{json $verb $tok {*}$path 1}
-					norm	{json $verb $tok {*}$path 2}
-					idx		{json $verb $tok {*}$path 3}
-					line	{json $verb $tok {*}$path 4 line}
-					char	{json $verb $tok {*}$path 4 char}
-					length	{json $verb $tok {*}$path 4 toklength}
-					default {
-						error "Invalid token part \"$part\""
-					}
-				}
-			}
-
-			#>>>
-			proc all_script_tokens commands { #<<<
-				set tokens	{[]}
-
-				json foreach command $commands {
-					json foreach word $command {
-						json foreach token $word {
-							json set tokens end+1 $token
-						}
-					}
-				}
-
-				set tokens
-			}
-
-			#>>>
-			proc new_command {} { #<<<
-				return {[]}
-			}
-
-			#>>>
-			proc word_add_tok {v tok} { #<<<
-				upvar 1 $v word
-				json set word end+1 $tok
-			}
-
-			#>>>
-			proc command_append_tok {v tok} { #<<<
-				upvar 1 $v command
-				json set command end end+1 $tok
-			}
-
-			#>>>
-			proc command_add_word {v word} { #<<<
-				upvar 1 $v command
-				json set command end+1 $word
-			}
-
-			#>>>
-			proc append_command {v command} { #<<<
-				upvar 1 $v commands
-				# TODO: extract first word:
-				#	- record whether it is a static command name known at compile time, or dynamic
-				#	- if static, record the command name text
-				json set commands end+1 $command
-			}
-
-			#>>>
+		} else {
+			set path	.
 		}
-		test {
-			closure maketok {type args} { #<<<
-				parse_args [list $type] {
-					type	{-required -enum {
-						TEXT
-						SPACE
-						VAR
-						ARRAY
-						INDEX
-						ESCAPE
-						END
-						SCRIPT
-						COMMENT
-						EXPAND
-						SYNTAX
-						OPERAND
-						OPERATOR
-						LPAREN
-						RPAREN
-						FLOAT
-						INTEGER
-						MATHFUNC
-						BOOL
-						EXPR
-						ARG
-						QUOTED
-						BRACED
-						SCRIPTARG
-						EXPRARG
-						SUBSTARG
-						LISTARG
-					}}
+
+		switch -exact -- $part {
+			str {
+				set type	[$tok selectNodes name($path)]
+				if {[$tok nodeName] in {SCRIPT INDEX}} {
+					error "Invalid token part \"$part\""
 				}
-				parse_args $args {
-					-idx	{-# {Index into the source text for the first character of this token}}
-					-str	{-# {The source characters of the token}}
-					-parts	{-# {The sub-parts of this token}}
-					-length	{-# {The length of characters this token spans in the source}}
-					-norm	{-# {The normalized form of the token}}
+				set xpath	string($path)
+			}
+			type {
+				set xpath	name($path)
+			}
+			norm - idx - length - line - char {
+				set xpath	string($path/@$part)
+			}
+			commands -
+			parts {
+				switch -exact -- [$tok selectNodes name($path)] {
+					SCRIPT	{set part	command}
+					INDEX	{set part	part}
+					default	{error "invalid token part \"$part\""}
 				}
-
-				lassign [idx2line $idx] line char
-
-				switch -exact -- $type {
-					SCRIPT {
-						switch -- [info exists parts],[info exists str] {
-							1,0 {}
-							default {error "SCRIPT requires -part, and can't specify -str"}
-						}
-
-						set tok	[json template {
-							{
-								"type":		"SCRIPT",
-								"commands":	"~J:parts",
-								"idx":		"~N:idx",
-								"line":		"~N:line",
-								"char":		"~N:char"
-							}
-						}]
-
-						if {![info exists length]} {
-							set length	[toklength $tok]
-						}
-						json set tok length $length
-						set tok
-					}
-
-					INDEX {
-						switch -- [info exists parts],[info exists str] {
-							1,0 {}
-							default {error "INDEX requires -part, and can't specify -str"}
-						}
-						set tok	[json template {
-							{
-								"type":		"INDEX",
-								"parts":	"~J:parts",
-								"idx":		"~N:idx",
-								"line":		"~N:line",
-								"char":		"~N:char"
-							}
-						}]
-
-						if {![info exists length]} {
-							set length	[toklength $tok]
-						}
-						json set tok length $length
-						set tok
-					}
-
-					default {
-						if {[info exists parts]} {
-							error "-part can only be specified for SCRIPT or INDEX"
-						}
-
-						set tok	[json template {
-							{
-								"type":		"~S:type",
-								"idx":		"~N:idx",
-								"line":		"~N:line",
-								"char":		"~N:char"
-							}
-						}]
-						if {[info exists str]} {
-							json set tok str $str
-						}
-						if {[info exists norm]} {
-							json set tok norm $norm		;# Is it safe to use the implicit type handling?
-						}
-
-						if {![info exists length]} {
-							set length	[toklength $tok]
-						}
-						json set tok length $length
-					}
-				}
-
-				set tok
+				set xpath	$path/$part
 			}
-
-			#>>>
-			proc tok {verb tok args} { #<<<
-				set path	[lrange $args 0 end-1]
-				set part	[lindex $args end]
-				switch -exact -- $part {
-					str {
-						if {[json get $tok {*}$path type] in {SCRIPT INDEX}} {
-							error "Invalid token part \"$part\""
-						}
-						json $verb $tok {*}$path $part
-					}
-					type - norm - idx - length - line - char {
-						json $verb $tok {*}$path $part
-					}
-					commands -
-					parts {
-						switch -exact -- [json get $tok {*}$path type] {
-							SCRIPT	{set part	commands}
-							INDEX	{set path	parts}
-							default	{error "invalid token part \"$part\""}
-						}
-						json $verb $tok {*}$path $part
-					}
-					default {
-						error "Invalid token part \"$part\""
-					}
-				}
+			default {
+				error "Invalid token part \"$part\""
 			}
-
-			#>>>
-			proc all_script_tokens commands { #<<<
-				set tokens	{[]}
-
-				json foreach command $commands {
-					json foreach word [json extract $command words] {
-						json foreach token $word {
-							json set tokens end+1 $token
-						}
-					}
-				}
-
-				set tokens
-			}
-
-			#>>>
-			proc new_command {} { #<<<
-				return {{"words":[]}}
-			}
-
-			#>>>
-			proc word_add_tok {v tok} { #<<<
-				upvar 1 $v word
-				json set word end+1 $tok
-			}
-
-			#>>>
-			proc command_append_tok {v tok} { #<<<
-				upvar 1 $v command
-				json set command words end end+1 $tok
-			}
-
-			#>>>
-			proc command_add_word {v word} { #<<<
-				upvar 1 $v command
-				json set command words end+1 $word
-			}
-
-			#>>>
-			proc append_command {v command} { #<<<
-				upvar 1 $v commands
-				# TODO: extract first word:
-				#	- record whether it is a static command name known at compile time, or dynamic
-				#	- if static, record the command name text
-				json set commands end+1 $command
-			}
-
-			#>>>
 		}
-						json $verb $tok {*}$path $part
-					}
-					commands -
-					parts {
-						switch -exact -- [json get $tok {*}$path type] {
-							SCRIPT	{set part	commands}
-							INDEX	{set path	parts}
-							default	{error "invalid token part \"$part\""}
-						}
-						json $verb $tok {*}$path $part
-					}
-					default {
-						error "Invalid token part \"$part\""
-					}
+
+		switch -exact -- $verb {
+			get {
+				if {[$tok selectNodes not($xpath)]} {
+					error "Part does not exist"
 				}
+				$tok selectNodes $xpath
 			}
 
-			#>>>
-			proc all_script_tokens commands { #<<<
-				set tokens	{[]}
-
-				json foreach command $commands {
-					json foreach word [json extract $command words] {
-						json foreach token $word {
-							json set tokens end+1 $token
-						}
-					}
-				}
-
-				set tokens
-			}
-
-			#>>>
-			proc new_command {} { #<<<
-				return {{"words":[]}}
-			}
-
-			#>>>
-			proc word_add_tok {v tok} { #<<<
-				upvar 1 $v word
-				json set word end+1 $tok
-			}
-
-			#>>>
-			proc command_append_tok {v tok} { #<<<
-				upvar 1 $v command
-				json set command words end end+1 $tok
-			}
-
-			#>>>
-			proc command_add_word {v word} { #<<<
-				upvar 1 $v command
-				json set command words end+1 $word
-			}
-
-			#>>>
-			proc append_command {v command} { #<<<
-				upvar 1 $v commands
-				# TODO: extract first word:
-				#	- record whether it is a static command name known at compile time, or dynamic
-				#	- if static, record the command name text
-				json set commands end+1 $command
-			}
-
-			#>>>
+			exists  { $tok selectNodes boolean($xpath) }
+			type    { $tok selectNodes name($xpath)    }
+			default { error "Unsupported tok verb: \"$verb\"" }
 		}
-		default {error "Unhandled type"}
 	}
+
+	#>>>
+	proc all_script_tokens commands { #<<<
+		set res	{}
+		foreach command $commands {
+			lappend res {*}[$command selectNodes command/word/*]
+		}
+		set res
+	}
+
+	#>>>
 	closure emit {type args} { #<<<
-		set tok	[maketok $type -idx $tokstart {*}$args]
-		incr tokstart [tok get $tok length]
-		json set tokens end+1 $tok
-		set token	{}
+		parse_args $args {
+			-idx	{-# {Index into the source text for the first character of this token}}
+			-str	{-# {The source characters of the token}}
+			-length	{-# {The length of characters this token spans in the source}}
+			-norm	{-# {The normalized form of the token}}
+			script	{-# {If specified, run this script beneath this node context}}
+		}
+
+		#if {$type eq "SPACE"} {puts stderr "emitting SPACE: $args, i: $i, tokstart: $tokstart"}
+
+		if {![info exists idx]} {
+			set idx		$tokstart
+		}
+
+		lassign [idx2line $idx] line char
+
+		set params	[list idx $idx line $line char $char]
+
+		if {[info exists norm]}   { lappend params norm	$norm }
+		if {[info exists script]} { lappend params $script    }
+
+		set my_tokstart	$tokstart
+		set tokstart	$i
+		set token		{}
+
+		set node	[$type {*}$params]
+
+		if {[info exists str] && $str ne ""} {
+			$node appendChild [[$node ownerDocument] createTextNode $str]
+		}
+
+		if {![info exists length]} {
+			#set length	[toklength $node]
+			set length	[- $i $my_tokstart]
+			#puts stderr "emitting $type: i: $i, tokstart: $tokstart, calculated length $length"
+
+			$node setAttribute length $length
+		}
+
+		set node
 	}
 
 	#>>>
@@ -538,70 +302,153 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	closure parse_commands {} { #<<<
-		set cmd		{[]}
-		set cmds	{[]}
+	closure parse_whitespace_or_comments {} { #<<<
+		set re	{\A(?:[\t \n]*\\\n[\t \n]*)|\A[\t \n]+}
 
-		emit_waiting TEXT
-		emit SYNTAX -str [char++]
-		set savetokstart	$tokstart
-		while 1 {
-			set savetokens	$tokens
-			set word		[get_word [== 0 [json length $cmd]] true]
-			set tokens		$savetokens
-			json set cmd end+1 $word
-			set lasttoken	[json extract $word end]
-			if {[json isnull $lasttoken]} {
-				throw [list PARSETCL PARSE COMMAND_NOT_TERMINATED $i $text $ofs] "Cannot find end of command"
+		set m	{}
+		while {
+			[set c [string index $text $i]] eq "#" ||
+			[regexp -start $i $re $text m]
+		} {
+			if {$m ne ""} {
+				append token $m
+				incr i	[string length $m]
+				set c	[string index $text $i]
+				emit_waiting SPACE
+				set m	{}
 			}
-			if {[tok get $lasttoken type] eq "END"} {
-				json set cmds end+1 [json template {
-					{
-						"words": "~J:cmd"
+
+			if {$c eq "#"} {
+				append token $c
+				incr i
+				set c	[string index $text $i]
+				while {$i < $textlen} {
+					if {$c eq "\\" && $i < $textlen-1} {
+						append token	$c
+						incr i
+						set c	[string index $text $i]
 					}
-				}]
-				set cmd	{[]}
-				if {[tok get $lasttoken str] in {"\]" ""}} break
+					append token $c
+					incr i
+					set c	[string index $text $i]
+					if {$c eq "\n"} {
+						append token	$c
+						incr i
+						set c	[string index $text $i]
+						break
+					}
+				}
+				emit_waiting COMMENT
 			}
 		}
-		set tokstart	$savetokstart
-		emit SCRIPT -parts $cmds
+	}
+
+	#>>>
+	closure parse_whitespace {} { #<<<
+		while {[regexp -start $i {\A(?:[\t ]*\\\n[\t ]*)|\A[\t ]+} $text m]} {
+			if {$m ne ""} {
+				append token $m
+				incr i	[string length $m]
+			}
+			emit_waiting SPACE
+		}
+	}
+
+	#>>>
+	closure parse_commands {} { #<<<
+		emit_waiting TEXT
+
+		emit SCRIPT {
+			emit SYNTAX -str [char++]
+
+			while {$i < $textlen} {
+				parse_whitespace_or_comments
+
+				emit COMMAND -idx $i {
+					while {$i < $textlen} {
+						parse_whitespace
+
+						if {$i < $textlen} {
+							emit WORD {
+								parse_word true
+							}
+						}
+
+						if {[tok get [dom currentNode] end type] eq "end"} break
+
+						if {$i >= $textlen} {
+							throw [list PARSETCL PARSE COMMAND_NOT_TERMINATED $i $text $ofs] "Cannot find end of command"
+						}
+					}
+					if {[tok get [dom currentNode] end str] in {"\]" ""}} break
+				}
+			}
+		}
+	}
+
+	#>>>
+	proc get_text {varname tok {raw false}} { # Store the constant text value of $tok in variable $varname if it is a static literal, return true if static <<<
+		upvar 1 $varname literal
+		set text	""
+		foreach child [$tok selectNodes *] {
+			switch -exact -- [$child nodeName] {
+				text	{append text [$child text]}
+				escape	{
+					if {$raw} {
+						append text [$child text]
+					} else {
+						append text [$child getAttribute norm]
+					}
+				}
+				default	{
+					# Not a constant value
+					return false
+				}
+			}
+		}
+		if {[info exists text]} {
+			set literal	$text
+			return true
+		}
+		return false
 	}
 
 	#>>>
 	closure parse_index {} { # Only called from within parse_variable <<<
 		# escape, variable and command substs apply here
 		emit SYNTAX -str [char++]
-		set saved_tokens	$tokens
-		set saved_tokstart	$tokstart
-		set tokens			{[]}
-		while 1 {
-			set c	[string index $text $i]
-			switch -exact -- $c {
-				{} {
-					throw [list PARSETCL PARSE MISSING_END_ARRAY $i $text $ofs] "missing )"
-				}
+		emit INDEX {
+			while 1 {
+				set c	[string index $text $i]
+				switch -exact -- $c {
+					{} {
+						throw [list PARSETCL PARSE MISSING_END_ARRAY $i $text $ofs] "missing )"
+					}
 
-				) {
-					emit_waiting TEXT
-					set indextokens		$tokens
-					set tokens			$saved_tokens
-					set tokstart		$saved_tokstart
-					emit INDEX -parts $indextokens
-					emit SYNTAX -str [char++]
-					return
-				}
+					) {
+						emit_waiting TEXT
 
-				"\\"   parse_escape
-				"\$"   parse_variable
-				"\["   parse_commands
+						set parent		[[dom currentNode] parent]
+						set isliteral	[get_text literal_value $parent]
+						if {$isliteral} {
+							# All child tokens of this index are static literals, compile them into value= attrib
+							$parent setAttribute value $literal_value
+						}
+						break
+					}
 
-				default {
-					append token $c
-					incr i
+					"\\"   parse_escape
+					"\$"   parse_variable
+					"\["   parse_commands
+
+					default {
+						append token $c
+						incr i
+					}
 				}
 			}
 		}
+		emit SYNTAX -str [char++]
 	}
 
 	#>>>
@@ -666,6 +513,7 @@ namespace eval ::parsetcl {
 		set emitted	false
 
 		emit SYNTAX -str [char++]
+		[dom currentNode] setAttribute quoted brace
 		set from	$i
 
 		while {$depth} {
@@ -704,8 +552,6 @@ namespace eval ::parsetcl {
 			emit TEXT -str $subtext
 		}
 		emit SYNTAX -str [char++]
-
-		set tokens
 	}
 
 	#>>>
@@ -714,6 +560,9 @@ namespace eval ::parsetcl {
 
 		if {$quoted} {
 			emit SYNTAX -str [char++]
+			[dom currentNode] setAttribute quoted quote
+		} else {
+			[dom currentNode] setAttribute quoted none
 		}
 
 		while 1 {
@@ -751,7 +600,7 @@ namespace eval ::parsetcl {
 							emit_waiting TEXT
 						}
 						emit SYNTAX -str [char++]
-						return $tokens
+						return
 					}
 
 					default {
@@ -762,15 +611,19 @@ namespace eval ::parsetcl {
 				switch -exact -- [string index $text $i] {
 					{} {
 						emit_waiting TEXT
-						emit END
-						return $tokens
+						[[dom currentNode] parentNode] appendFromScript {
+							emit END
+						}
+						return
 					}
 
 					"\n" - ";" {
 						emit_waiting TEXT
 						set token	[char++]
-						emit END -str $token
-						return $tokens
+						[[dom currentNode] parentNode] appendFromScript {
+							emit END -str $token
+						}
+						return
 					}
 
 					"\\" {
@@ -779,13 +632,14 @@ namespace eval ::parsetcl {
 						} else {
 							# Line fold - falls through
 							emit_waiting TEXT
-							return $tokens
+							return
 						}
 					}
 
 					{ } - "\t" {
+						# TODO: actually - any whitespace other than \n, not just space and tab?
 						emit_waiting TEXT
-						return $tokens
+						return
 					}
 
 					default {
@@ -804,8 +658,10 @@ namespace eval ::parsetcl {
 						if {$incmdsubst && !$quoted} {
 							emit_waiting TEXT
 							set token	$c
-							emit END -str $token
-							return $tokens
+							[[dom currentNode] parentNode] appendFromScript {
+								emit END -str $token
+							}
+							return
 						}
 						append token $c
 					}
@@ -819,72 +675,31 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	closure get_word {first incmdsubst} { #<<<
-		set tokens	{[]}
-		set token	{}
-		if {$first} {
-			set re	{\A(?:[\t \n]*\\\n[\t \n]*)|\A[\t \n]+}
-		} else {
-			set re	{\A(?:[\t ]*\\\n[\t ]*)|\A[\t ]+}
-		}
-
-		# Consume any leading whitespace / comments if first word
-		set m	{}
-		set c	[string index $text $i]
-		while {
-			($first && [set c [string index $text $i]] eq "#") ||
-			([regexp -start $i $re $text m])
-		} {
-			if {$m ne ""} {
-				append token $m
-				incr i	[string length $m]
-				set c	[string index $text $i]
-			}
-			emit_waiting SPACE
-			if {$first && $c eq "#"} {
-				set textlen	[string length $text]
-				while ($i < $textlen) {
-					set c	[string index $text $i]
-					if {$c eq "\\" && $i < $textlen-1} {
-						append token	$c
-						incr i
-						set c	[string index $text $i]
-					}
-					append token $c
-					incr i
-					set c	[string index $text $i]
-					if {$c eq "\n"} {
-						append token	$c
-						incr i
-						set c	[string index $text $i]
-						break
-					}
-				}
-				emit COMMENT -str $token
-			}
-			set m	{}
-		}
-
+	closure parse_word incmdsubst { #<<<
 		# handle {*}
+		set c	[string index $text $i]
 		if {$c eq "\{" && [regexp -start $i {\A{\*}} $text]} {
 			emit EXPAND -str "{*}"
 			incr i 3
 			set c	[string index $text $i]
+			[dom currentNode] setAttribute expand true
 		}
 
 		switch -exact -- $c {
-			{}    {return $tokens}
-			"\{"  {return [parse_braced]}
-			"\""  {return [parse_combined true $incmdsubst]}
+			{}    {}
+			"\{"  {parse_braced}
+			"\""  {parse_combined true $incmdsubst}
 			"\]" {
 				if {$incmdsubst} {
-					emit END -str [char++]
-					return $tokens
+					[[dom currentNode] parentNode] appendFromScript {
+						# Arrange for the END node to be inserted as a sibling of this word node, just after it
+						emit END -str [char++]
+					}
 				}
-				return [parse_combined false $incmdsubst]
+				parse_combined false $incmdsubst
 			}
 			default {
-				return [parse_combined false $incmdsubst]
+				parse_combined false $incmdsubst
 			}
 		}
 	}
@@ -1192,7 +1007,7 @@ namespace eval ::parsetcl {
 						}
 						emit_waiting TEXT
 						emit SYNTAX -str [char++]
-						return $tokens
+						return
 					}
 				}
 			} elseif {$cx eq "\{"} {
@@ -1212,13 +1027,13 @@ namespace eval ::parsetcl {
 							}
 							emit_waiting TEXT
 							emit SYNTAX -str [char++]
-							return $tokens
+							return
 						}
 					}
 				}
 			} elseif {[is_whitespace [string index $text $i]]} {
 				emit_waiting TEXT
-				return $tokens
+				return
 			}
 
 			if {[string index $text $i] eq "\\"} {
@@ -1247,7 +1062,7 @@ namespace eval ::parsetcl {
 
 			switch -exact -- [string index $text $i] {
 				{} {
-					return $tokens
+					return
 				}
 
 				"\{" -
@@ -1262,17 +1077,6 @@ namespace eval ::parsetcl {
 
 			parse_list_element $cx
 		}
-	}
-
-	#>>>
-	proc find_line_no {source ofs} { #<<<
-		set line	[string length [regsub -all [string range $source 0 $ofs-1] {[\A\n]+} {}]]
-		+ $line 1
-	}
-
-	#>>>
-	proc find_line_ofs {source ofs} { #<<<
-		- $ofs [string first \n $source $ofs]
 	}
 
 	#>>>
@@ -1295,71 +1099,110 @@ namespace eval ::parsetcl {
 
 	#>>>
 	proc parse {text mode {ofs 0} {a_ofsline 1}} { #<<<
+		variable doc
 		set i			0
 		set token		{}
-		set tokens		{[]}
-		set command		[new_command]
-		set commands	{[]}
-		#set matches		{}
+		set tokens		{[]}		;# Only used by expr parser
 		set tokstart	[expr {$ofs eq "" ? 0 : $ofs}]
 		set textlen		[string length $text]
 		set linestarts	[list $tokstart {*}[lmap m [regexp -indices -all -inline {\n} $text] {+ [lindex $m 0] $ofs 1}]]
 		set ofsline		$a_ofsline
 
-		switch -exact -- $mode {
-			script {
-				while {$i < $textlen} {
-					#set was	$i	;# DEBUG
-					set word	[get_word [== 0 [json length $command]] false]
-					if {$i >= $textlen && [json length $word] && [tok get $word end type] ne "END"} {
-						word_add_tok word [maketok END -idx $i]
-					}
-					if {[json length $command] > 1 && [word_empty $word]} {
-						# Prevent a fake word being added to the command only
-						# containing non-word tokens
-						command_append_tok command $word
-					} else {
-						command_add_word command $word
-					}
-					#if {$i == $was} {error "No progress made: $i"}	;# DEBUG
-					set lasttoken	[json extract $word end]
-					if {![json isnull $lasttoken] && [tok get $lasttoken type] eq "END"} {
-						append_command commands $command
-						set command	[new_command]
-						#set command {[]}
-					}
-				}
-				return [maketok SCRIPT -parts $commands -idx $ofs]
-			}
-			expr {
-				parse_subexpr
-				return $tokens
-			}
-			list {
-				tokenize_list
-				return $tokens
-			}
-			subst {
-				while {$i < $textlen} {
-					set c	[string index $text $i]
-					switch -exact -- $c {
-						"\\"   parse_escape
-						"\$"   parse_variable
-						"\["   parse_commands
+		if {![info exists doc]} {
+			set doc		[dom createDocument tcl]
+			set node	[$doc documentElement]
+			set docowned	true
+		} else {
+			set docowned	false
+			set node		[$mode]
+		}
+		try {
+			$node appendFromScript {
+				switch -exact -- $mode {
+					script {
+						emit SCRIPT {
+							while {$i < $textlen} {
+								parse_whitespace_or_comments
 
-						default {
-							append token $c
-							incr i
+								emit COMMAND -idx $i {
+									while {$i < $textlen} {
+										parse_whitespace
+
+										if {$i < $textlen} {
+											emit WORD {
+												parse_word false
+											}
+											set lastword	[[dom currentNode] selectNodes {word[last()]}]
+											if {[$lastword selectNodes count(*)] == 0} {
+												$lastword delete
+											}
+										}
+
+										if {[tok get [dom currentNode] end type] eq "end"} break
+
+										if {$i >= $textlen} {
+											# Hit EOF before finding the end of this command, produce an empty, synthetic END
+											emit END -idx $i
+											break
+										}
+									}
+
+									# If the first word of this command is a literal, store the name in the name= attrib
+									set thiscommand	[dom currentNode]
+									set isliteral	[get_text literal_value [$thiscommand selectNodes {word[1]}]]
+									if {$isliteral} {
+										# All child tokens of this index are static literals, compile them into value= attrib
+										$thiscommand setAttribute name $literal_value
+									}
+								}
+							}
 						}
 					}
+					expr {
+						emit EXPR {
+							parse_subexpr
+						}
+					}
+					list {
+						emit LIST {
+							tokenize_list
+						}
+					}
+					subst {
+						while {$i < $textlen} {
+							set c	[string index $text $i]
+							switch -exact -- $c {
+								"\\"   parse_escape
+								"\$"   parse_variable
+								"\["   parse_commands
+
+								default {
+									append token $c
+									incr i
+								}
+							}
+						}
+						emit_waiting TEXT
+					}
+					default {
+						throw {TCL WRONGARGS} "Invalid parse mode: \"$mode\""
+					}
 				}
-				emit_waiting TEXT
-				return $tokens
 			}
-			default {
-				throw {TCL WRONGARGS} "Invalid parse mode: \"$mode\""
+		} on error {errmsg options} {
+			if {$docowned} {
+				catch {$doc delete}
+			} else {
+				$node delete
+			}
+			return -options $options $errmsg
+		} finally {
+			if {$docowned} {
+				unset -nocomplain doc
 			}
 		}
+		#puts stderr "parsetree:\n[$node asXML]"
+		set node
 	}
 
 	#>>>
