@@ -38,6 +38,9 @@ AC_CONFIG_AUX_DIR(tclconfig)
 TEA_PATH_TCLCONFIG
 TEA_LOAD_TCLCONFIG
 
+TEA_PATH_CONFIG(tdom)
+TEA_LOAD_CONFIG(tdom)
+
 #--------------------------------------------------------------------
 # Load the tkConfig.sh file if necessary (Tk extension)
 #--------------------------------------------------------------------
@@ -74,7 +77,7 @@ TEA_SETUP_COMPILER
 TEA_ADD_SOURCES([parsetcl.c])
 TEA_ADD_HEADERS([])
 TEA_ADD_INCLUDES([])
-TEA_ADD_LIBS([])
+TEA_ADD_LIBS([${TDOM_STUB_LIB_SPEC}])
 TEA_ADD_CFLAGS([])
 TEA_ADD_STUB_SOURCES([])
 TEA_ADD_TCL_SOURCES([library/parser.tcl library/parser_utils.tcl])

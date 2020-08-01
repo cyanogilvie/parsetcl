@@ -1,4 +1,5 @@
 #include "tclstuff.h"
+#include <tdom.h>
 
 #ifdef __cplusplus
 extern "C" {
