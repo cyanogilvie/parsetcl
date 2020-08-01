@@ -22,7 +22,7 @@ test debug-1.1 {Ensure all the procs in the namespace parse (given all the brace
 } -result 1
 #>>>
 test parser-1.1 {hello, world} -body { #<<<
-	set parse_tree	[parse_script "puts \"hello, world\"\nfoo"]
+	set parse_tree	[parse script "puts \"hello, world\"\nfoo"]
 	#puts [$parse_tree asXML]
 	$parse_tree asXML
 } -cleanup {
@@ -30,24 +30,24 @@ test parser-1.1 {hello, world} -body { #<<<
 	unset -nocomplain parse_tree
 } -result {<tcl>
     <script idx="0" line="1" char="1" length="23">
-        <command idx="0" line="1" char="1" name="puts" length="20">
-            <word idx="0" line="1" char="1" quoted="none" length="4">
+        <command idx="0" line="1" char="1" length="20" name="puts">
+            <word idx="0" line="1" char="1" quoted="none" length="4" value="puts">
                 <text idx="0" line="1" char="1" length="4">puts</text>
             </word>
-            <space idx="4" line="1" char="5" length="1"> </space>
-            <word idx="5" line="1" char="6" quoted="quote" length="14">
-                <syntax idx="5" line="1" char="6" length="1">"</syntax>
+            <space idx="4" line="1" char="5" length="1" noise=""> </space>
+            <word idx="5" line="1" char="6" quoted="quote" length="14" value="hello, world">
+                <syntax idx="5" line="1" char="6" length="1" noise="">"</syntax>
                 <text idx="6" line="1" char="7" length="12">hello, world</text>
-                <syntax idx="18" line="1" char="19" length="1">"</syntax>
+                <syntax idx="18" line="1" char="19" length="1" noise="">"</syntax>
             </word>
-            <end idx="19" line="1" char="20" length="1">
+            <end idx="19" line="1" char="20" length="1" noise="">
 </end>
         </command>
-        <command idx="20" line="2" char="1" name="foo" length="3">
-            <word idx="20" line="2" char="1" quoted="none" length="3">
+        <command idx="20" line="2" char="1" length="3" name="foo">
+            <word idx="20" line="2" char="1" quoted="none" length="3" value="foo">
                 <text idx="20" line="2" char="1" length="3">foo</text>
             </word>
-            <end idx="23" line="2" char="4" length="0"/>
+            <end idx="23" line="2" char="4" length="0" noise=""/>
         </command>
     </script>
 </tcl>

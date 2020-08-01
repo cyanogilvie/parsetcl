@@ -8,6 +8,7 @@ namespace eval ::parsetcl {
 			expr
 			list
 			subst
+			as
 
 			text
 			space
@@ -31,10 +32,6 @@ namespace eval ::parsetcl {
 			arg
 			quoted
 			braced
-			scriptarg
-			exprarg
-			substarg
-			listarg
 		} {
 			dom createNodeCmd -returnNodeCmd elementNode $tag
 			interp alias {} ::parsetcl::[string toupper $tag] {} [namespace current]::$tag
@@ -43,14 +40,15 @@ namespace eval ::parsetcl {
 		dom createNodeCmd commentNode <!--
 	}
 
+	proc xpath {node xpath} { tailcall $node selectNodes $xpath }
 	proc closure {name args script} { # Fake closure for parse state variables <<<
-		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline; $script"
+		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline literal_word literal_word; $script"
 	}
 
 	#>>>
 	proc closurelambda {l args} { # Fake closure lambda generator <<<
 		set script	[lindex $l 1]
-		lset l 1 "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline; $script"
+		lset l 1 "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline literal_word literal_word; $script"
 		list apply $l {*}$args
 	}
 
@@ -202,9 +200,10 @@ namespace eval ::parsetcl {
 		if {[info exists norm]}   { lappend params norm	$norm }
 		if {[info exists script]} { lappend params $script    }
 
-		set my_tokstart	$tokstart
-		set tokstart	$i
-		set token		{}
+		set my_tokstart		$tokstart
+		set tokstart		$i
+		set token			{}
+		set literal_word	true
 
 		set node	[$type {*}$params]
 
@@ -400,6 +399,7 @@ namespace eval ::parsetcl {
 						append text [$child getAttribute norm]
 					}
 				}
+				syntax	{}
 				default	{
 					# Not a constant value
 					return false
@@ -428,13 +428,13 @@ namespace eval ::parsetcl {
 					) {
 						emit_waiting TEXT
 
-						set parent		[[dom currentNode] parent]
-						set isliteral	[get_text literal_value $parent]
-						if {$isliteral} {
-							# All child tokens of this index are static literals, compile them into value= attrib
-							$parent setAttribute value $literal_value
-						}
-						break
+						#set parent		[[dom currentNode] parent]
+						#set isliteral	[get_text literal_value $parent]
+						#if {$isliteral} {
+						#	# All child tokens of this index are static literals, compile them into value= attrib
+						#	$parent setAttribute value $literal_value
+						#}
+						#break
 					}
 
 					"\\"   parse_escape
@@ -474,8 +474,9 @@ namespace eval ::parsetcl {
 				set i		[- $i [string length $token]]
 				set token	[string range $token 0 $idx-1]
 				incr i		[string length $token]
-				emit ARRAY -str $token
-				parse_index
+				emit ARRAY -str $token {
+					parse_index
+				}
 				set i	$save_i
 			} else {
 				emit VAR -str $token
@@ -1061,9 +1062,7 @@ namespace eval ::parsetcl {
 			}
 
 			switch -exact -- [string index $text $i] {
-				{} {
-					return
-				}
+				{} return
 
 				"\{" -
 				"\"" {
@@ -1075,13 +1074,16 @@ namespace eval ::parsetcl {
 				}
 			}
 
-			parse_list_element $cx
+			emit WORD {
+				parse_list_element $cx
+			}
 		}
 	}
 
 	#>>>
 	proc visualize_whitespace str { #<<<
-		string map {\n \u23ce  \t \u21e5} $str
+		#string map {\n \u23ce  \t \u21e5} $str
+		string map {\n \u23ce  \t \u21e5  { } \u23b5} $str
 	}
 
 	#>>>
@@ -1098,8 +1100,7 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
-	proc parse {text mode {ofs 0} {a_ofsline 1}} { #<<<
-		variable doc
+	proc parse {mode text {ofs 0} {a_ofsline 1}} { #<<<
 		set i			0
 		set token		{}
 		set tokens		{[]}		;# Only used by expr parser
@@ -1108,19 +1109,19 @@ namespace eval ::parsetcl {
 		set linestarts	[list $tokstart {*}[lmap m [regexp -indices -all -inline {\n} $text] {+ [lindex $m 0] $ofs 1}]]
 		set ofsline		$a_ofsline
 
-		if {![info exists doc]} {
-			set doc		[dom createDocument tcl]
-			set node	[$doc documentElement]
+		if {[catch {dom currentNode}]} {
+			set doc			[dom createDocument tcl]
+			set node		[$doc documentElement]
 			set docowned	true
 		} else {
 			set docowned	false
-			set node		[$mode]
+			set node		[dom currentNode]
 		}
 		try {
 			$node appendFromScript {
 				switch -exact -- $mode {
 					script {
-						emit SCRIPT {
+						set new [emit SCRIPT {
 							while {$i < $textlen} {
 								parse_whitespace_or_comments
 
@@ -1148,52 +1149,114 @@ namespace eval ::parsetcl {
 									}
 
 									# If the first word of this command is a literal, store the name in the name= attrib
-									set thiscommand	[dom currentNode]
-									set isliteral	[get_text literal_value [$thiscommand selectNodes {word[1]}]]
-									if {$isliteral} {
-										# All child tokens of this index are static literals, compile them into value= attrib
-										$thiscommand setAttribute name $literal_value
+									#set thiscommand	[dom currentNode]
+									#set isliteral	[get_text literal_value [$thiscommand selectNodes {word[1]}]]
+									#if {$isliteral} {
+									#	# All child tokens of this index are static literals, compile them into value= attrib
+									#	$thiscommand setAttribute name $literal_value
+									#}
+								}
+							}
+						}]
+					}
+					expr {
+						set new	[emit EXPR {
+							parse_subexpr
+						}]
+					}
+					list {
+						set new [emit LIST {
+							tokenize_list
+						}]
+					}
+					subst {
+						set new [emit SUBST {
+							while {$i < $textlen} {
+								set c	[string index $text $i]
+								switch -exact -- $c {
+									"\\"   parse_escape
+									"\$"   parse_variable
+									"\["   parse_commands
+
+									default {
+										append token $c
+										incr i
 									}
 								}
 							}
-						}
-					}
-					expr {
-						emit EXPR {
-							parse_subexpr
-						}
-					}
-					list {
-						emit LIST {
-							tokenize_list
-						}
-					}
-					subst {
-						while {$i < $textlen} {
-							set c	[string index $text $i]
-							switch -exact -- $c {
-								"\\"   parse_escape
-								"\$"   parse_variable
-								"\["   parse_commands
-
-								default {
-									append token $c
-									incr i
-								}
-							}
-						}
-						emit_waiting TEXT
+							emit_waiting TEXT
+						}]
 					}
 					default {
 						throw {TCL WRONGARGS} "Invalid parse mode: \"$mode\""
 					}
 				}
 			}
+		} on ok {} {
+			#puts stderr "parsetree:\n[$node asXML]"
+			set before	[clock microseconds]
+
+			# Tag all noise tokens (SYNTAX, END, SPACE, COMMENT, EXPAND)
+			unset -nocomplain noise_xpath
+			switch -exact -- $mode {
+				script	{ set noise_xpath {.//syntax | .//end | .//space | .//comment | .//expand} }
+				list	{ set noise_xpath {.//syntax | .//space} }
+			}
+			if {[info exists noise_xpath]} {
+				foreach tok [xpath $new $noise_xpath] { $tok setAttribute noise "" }
+			}
+
+			# Resolve all literal words to a @value attrib on the word node
+			foreach word [xpath $new {
+				.//word[not(*[not(@noise) and name()!='text' and name()!='escape'])]
+			}] {
+				set raw		[expr {[$word getAttribute quoted] eq "brace"}]
+				if {![get_text literal_value $word $raw]} {
+					error "Word literal xpath false positive: [$word asXML]"
+				}
+				$word setAttribute value $literal_value
+			}
+
+			if {$mode eq "script"} {
+				# Add @name attrib to all commands with a literal first word
+				foreach commandname [xpath $new {
+					.//command/word[1][@value]
+				}] {
+					[$commandname parentNode] setAttribute name [$commandname getAttribute value]
+				}
+
+				# Find all literal array indexes
+				foreach index [xpath $new {
+					.//index[not(*[not(@noise) and name()!='text' and name()!='escape'])]
+				}] {
+					if {![get_text literal_value $index]} {
+						error "Index literal xpath false positive: [$index asXML]"
+					}
+					$index setAttribute value $literal_value
+				}
+
+				# Find all simple dynamic words:
+				#	- Those that resolve to a single variable value
+				foreach var [xpath $new {
+					.//word[count(*[not(@noise)])=1]/var
+				}] {
+					[$var parentNode] setAttribute varvalue [$var text]
+				}
+				foreach array [xpath $new {
+					.//word[count(*[not(@noise)])=1]/array[index[@value]]
+				}] {
+					[$array parentNode] setattribute varvalue [xpath $array string(text())]([xpath $array string(index/@value)])
+				}
+			}
+			set elapsed	[- [clock microseconds] $before]
+			#puts stderr "Tree processing: $elapsed microseconds"
+
+			#puts stderr "parsetree after processing:\n[$new asXML]"
 		} on error {errmsg options} {
 			if {$docowned} {
 				catch {$doc delete}
-			} else {
-				$node delete
+			} elseif {[info exists new]} {
+				$new delete
 			}
 			return -options $options $errmsg
 		} finally {
@@ -1201,31 +1264,52 @@ namespace eval ::parsetcl {
 				unset -nocomplain doc
 			}
 		}
-		#puts stderr "parsetree:\n[$node asXML]"
+
 		set node
 	}
 
 	#>>>
+	if 0 {
 	proc parse_script {text {ofs 0} {ofsline 1}} { #<<<
 		# First unfold - happens even in brace quoted words
 		# This has been pushed down to parse_escape, parse_braced and parse_subexpr
 		#regsub -all {\\\n\s*} $text { } text
-		tailcall parse $text script $ofs $ofsline
+		tailcall parse script $text $ofs $ofsline
 	}
 
 	#>>>
 	proc parse_expr {text {ofs 0} {ofsline 1}} { #<<<
-		tailcall parse $text expr $ofs $ofsline
+		tailcall parse expr $text $ofs $ofsline
 	}
 
 	#>>>
 	proc parse_list {text {ofs 0} {ofsline 1}} { #<<<
-		tailcall parse $text list $ofs $ofsline
+		tailcall parse list $text $ofs $ofsline
 	}
 
 	#>>>
 	proc parse_subst {text {ofs 0} {ofsline 1}} { #<<<
-		tailcall parse $text subst $ofs $ofsline
+		tailcall parse subst $text $ofs $ofsline
+	}
+
+	#>>>
+	}
+	proc subparse {mode word} { #<<<
+		if {![$word hasAttribute value]} {
+			# TODO: what?
+			return
+		}
+
+		set as	[lindex [xpath $word as] 0]
+		if {$as eq ""} {
+			$word appendFromScript {
+				set as	[AS]
+			}
+		}
+
+		$as appendFromScript {
+			parse $mode [$word getAttribute value] [$word getAttribute idx] [$word getAttribute line]
+		}
 	}
 
 	#>>>
