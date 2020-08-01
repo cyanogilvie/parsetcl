@@ -1,10 +1,6 @@
 package require tcltest
 namespace import ::tcltest::*
 
-tcl::tm::path add ~/.tbuild/repo/tm/tcl
-tcl::tm::path add tm/tcl
-lappend auto_path ~/local/lib
-
 try {
 	package require parsetcl
 	namespace import ::parsetcl::*

@@ -1,2 +1,11 @@
-tm
 *.swp
+tags
+tclconfig
+Makefile
+autom4te.cache
+config.log
+config.status
+configure
+*.so
+*.o
+pkgIndex.tcl

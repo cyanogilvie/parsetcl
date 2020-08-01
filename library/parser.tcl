@@ -1,3 +1,18 @@
+package require rl_json
+package require parse_args
+package require tdom 0.9.2
+
+namespace eval ::parsetcl {
+	namespace export *
+	namespace ensemble create -prefixes no
+
+	namespace path {
+		::tcl::mathop
+		::rl_json
+		::parse_args
+	}
+}
+
 namespace eval ::parsetcl {
 	namespace eval dom {
 		foreach tag {

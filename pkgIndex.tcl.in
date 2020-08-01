@@ -1,0 +1,13 @@
+#
+# Tcl package index file
+#
+package ifneeded @PACKAGE_NAME@ @PACKAGE_VERSION@ [list apply {dir {
+	load [file join $dir @PKG_LIB_FILE@] @PACKAGE_NAME@
+	if {[file readable [file join $dir library parser.tcl]]} {
+		source [file join $dir library parser.tcl]
+		source [file join $dir library parser_utils.tcl]
+	} else {
+		source [file join $dir parser.tcl]
+		source [file join $dir parser_utils.tcl]
+	}
+}} $dir]
