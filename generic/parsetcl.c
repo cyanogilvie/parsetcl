@@ -1,5 +1,6 @@
 #include "tclstuff.h"
 #include <tdom.h>
+#include <tcldom.h>
 
 static void free_parsetree(Tcl_Obj* obj);
 static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest);
@@ -20,7 +21,7 @@ static void free_parsetree(Tcl_Obj* obj) //{{{
 
 	ir = Tcl_FetchIntRep(obj, &parsetree);
 	if (ir && ir->twoPtrValue.ptr1) {
-		domFreeDocument((domDocument*)ir->twoPtrValue.ptr1);
+		domFreeDocument((domDocument*)ir->twoPtrValue.ptr1, NULL, NULL);
 		ir->twoPtrValue.ptr1 = NULL;
 	}
 }
@@ -33,21 +34,19 @@ static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest) //{{{
 	domNode*			srcroot = NULL;
 	domNode*			destroot = NULL;
 	domDocument*		destdoc = NULL;
-	domException		esception;
 
 	srcir = Tcl_FetchIntRep(src, &parsetree);
 	if (srcir == NULL)
 		Tcl_Panic("dup_internal_rep asked to duplicate for type, but that type wasn't available on the src object");
 
-	srcroot = ir->twoPtrValue.ptr2;
+	srcroot = srcir->twoPtrValue.ptr2;
 
 	destdoc = domCreateDoc(NULL, 0);
 	destroot = domCloneNode(srcroot, 1);
-	destdoc->documentElement = destroot;
-	destdoc->rootNode->firstChild = doc->rootNode->lastChild = doc->documentElement;
-	domSetDocument(destroot, destdoc);
+	destdoc->rootNode->firstChild = destdoc->rootNode->lastChild = destdoc->documentElement;
+	domSetDocumentElement(destdoc);
 
-	destir.twoPtrValue.ptr1 = destdoc
+	destir.twoPtrValue.ptr1 = destdoc;
 	destir.twoPtrValue.ptr2 = destroot;
 
 	Tcl_StoreIntRep(dest, &parsetree, &destir);
@@ -100,53 +99,49 @@ static int parse_tcl_script(Tcl_Interp* interp, Tcl_Obj* script, domDocument** r
 
 	// TODO: Parse obj as Tcl, populate parsetree doc
 
-	if (*res) domFreeDocument(*res);
+	if (*res) domFreeDocument(*res, NULL, NULL);
 	*res = doc;
 	doc = NULL;
 
 finally:
 	if (doc) {
-		domFreeDocument(doc);
+		domFreeDocument(doc, NULL, NULL);
 		doc = NULL;
 	}
 	return code;
 }
 
 //}}}
-static int get_parsetree_from_obj(interp, Tcl_Obj* obj, domDocument** doc, domNode** root) //{{{
+static int get_parsetree_from_obj(Tcl_Interp* interp, Tcl_Obj* obj, domDocument** doc) //{{{
 {
 	Tcl_ObjIntRep*		ir = NULL;
-	domDocument*		doc = NULL;
-	domNode*			root = NULL;
 	int					code = TCL_OK;
 
-	ir = Tcl_FetchIntRep(val, &parsetree);
+	ir = Tcl_FetchIntRep(obj, &parsetree);
 	if (ir == NULL) {
 		Tcl_ObjIntRep	newir;
 
-		if (TCL_OK != (code = parse_tcl_script(interp, obj, &newir.twoPtrValue.ptr1)))
+		if (TCL_OK != (code = parse_tcl_script(interp, obj, (domDocument**)&newir.twoPtrValue.ptr1)))
 			goto finally;
 
-		newir.twoPtrValue.ptr2 = (domDocument*)(newir.twoPtrValue.ptr1)->documentElement;
-
 		Tcl_StoreIntRep(obj, &parsetree, &newir);
-		ir = FetchIntRep(val, &parsetree);
+		ir = Tcl_FetchIntRep(obj, &parsetree);
 	}
 
 	*doc = (domDocument*)ir->twoPtrValue.ptr1;
-	*root = (domNode*)ir->twoPtrValue.ptr2;
 
 finally:
 	return code;
 }
 
 //}}}
-static int parsetree(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[]) //{{{
+static int get_parsetree(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[]) //{{{
 {
 	int				code = TCL_OK;
 	domDocument*	doc = NULL;
-	Tcl_Obj*		res = NULL;
-	Tcl_ObjIntRep	ir;
+	//Tcl_Obj*		res = NULL;
+	//Tcl_ObjIntRep	ir;
+	char			nodecmd[80];
 
 	if (objc != 2) {
 		Tcl_WrongNumArgs(interp, 1, objv, "script");
@@ -154,14 +149,18 @@ static int parsetree(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *co
 		goto finally;
 	}
 
-	if (TCL_OK != (code = get_parsetree_from_obj(interp, objv[1], &doc, &root)))
+	if (TCL_OK != (code = get_parsetree_from_obj(interp, objv[1], &doc)))
 		goto finally;
 
+	tcldom_createNodeObj(interp, doc->documentElement, (char*)&nodecmd);
+	/*
 	res = Tcl_NewObj();
 	ir.otherValuePtr = doc->documentElement;
-	Tcl_StoreIntRep(obj, &tdomNodeType, &ir);
-
+	Tcl_StoreIntRep(res, &tdomNodeType, &ir);
 	Tcl_SetObjResult(interp, res);
+	*/
+
+	Tcl_SetObjResult(interp, Tcl_NewStringObj(nodecmd, -1));
 
 finally:
 	return code;
@@ -175,7 +174,7 @@ struct cmd {
 	char*			name;
 	Tcl_ObjCmdProc*	proc;
 } cmds[] = {
-	{NS "::parsetree",	parsetree},
+	{NS "::parsetree",	get_parsetree},
 	{NULL,				NULL}
 };
 
@@ -204,7 +203,7 @@ DLLEXPORT int Parsetcl_Init(Tcl_Interp* interp) //{{{
 		Tcl_CreateEnsemble(interp, NS, ns, 0);
 
 		while (c->name != NULL) {
-			if (NULL = Tcl_CreateObjCommand(interp, c->name, c->proc, l, NULL)) {
+			if (NULL == Tcl_CreateObjCommand(interp, c->name, c->proc, NULL, NULL)) {
 				Tcl_SetObjResult(interp, Tcl_ObjPrintf("Could not create command %s", c->name));
 				code = TCL_ERROR;
 				goto finally;
