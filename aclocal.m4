@@ -23,3 +23,9 @@ AC_DEFUN([TIP445], [
 	AC_DEFINE(TIP445_SHIM, 1, [Do we need to polyfill TIP 445?])
 	AC_MSG_RESULT([yes])
     fi])
+
+AC_DEFUN([TDOM_STUBS], [
+	if test "${STUBS_BUILD}" = "1"; then
+		AC_DEFINE(USE_TDOM_STUBS, 1, [Use TDOM Stubs])
+	fi
+])

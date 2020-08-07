@@ -1,6 +1,5 @@
 package require rl_json
 package require parse_args
-package require tdom 0.9.2
 
 namespace eval ::parsetcl {
 	namespace export *
@@ -35,15 +34,18 @@ namespace eval ::parsetcl {
 			comment
 			expand
 			syntax
-			operand
 			operator
+			subexpr
+
+
+
+
 			lparen
 			rparen
 			float
 			integer
 			mathfunc
 			bool
-			expr
 			arg
 			quoted
 			braced
@@ -55,7 +57,7 @@ namespace eval ::parsetcl {
 		dom createNodeCmd commentNode <!--
 	}
 
-	proc xpath {node xpath} { tailcall $node selectNodes $xpath }
+	proc xpath {node xpath} { tailcall domNode $node selectNodes $xpath }
 	proc closure {name args script} { # Fake closure for parse state variables <<<
 		tailcall proc $name $args "upvar 1 i i text text textlen textlen tokstart tokstart token token tokens tokens linestarts linestarts ofsline ofsline literal_word literal_word; $script"
 	}
@@ -291,7 +293,11 @@ namespace eval ::parsetcl {
 			}
 
 			"\n" {
-				# Line folding
+				# BUG: if this is called from the context of tokenize_list for
+				# a word that isn't quoted with braces or double quotes, this
+				# case counts as whitespace that terminates the word, not a
+				# literal " ".
+				# Line folding:
 				if {[regexp -start i {\A[ \t]*} $text match]} {
 					literal { } [+ 1 [string length $match]]
 				} else {
@@ -404,14 +410,14 @@ namespace eval ::parsetcl {
 	proc get_text {varname tok {raw false}} { # Store the constant text value of $tok in variable $varname if it is a static literal, return true if static <<<
 		upvar 1 $varname literal
 		set text	""
-		foreach child [$tok selectNodes *] {
-			switch -exact -- [$child nodeName] {
-				text	{append text [$child text]}
+		foreach child [domNode $tok selectNodes *] {
+			switch -exact -- [domNode $child nodeName] {
+				text	{append text [domNode $child text]}
 				escape	{
 					if {$raw} {
-						append text [$child text]
+						append text [domNode $child text]
 					} else {
-						append text [$child getAttribute norm]
+						append text [domNode $child getAttribute norm]
 					}
 				}
 				syntax	{}
@@ -1309,7 +1315,7 @@ namespace eval ::parsetcl {
 
 	#>>>
 	}
-	proc subparse {mode word} { #<<<
+	proc subparse_tcl {mode word} { #<<<
 		if {![$word hasAttribute value]} {
 			# TODO: what?
 			return

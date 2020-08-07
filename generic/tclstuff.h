@@ -81,7 +81,6 @@ static inline void replace_tclobj(Tcl_Obj** target, Tcl_Obj* replacement)
 #	 include <signal.h>
 #	 include <unistd.h>
 #	 include <time.h>
-#	 include "names.h"
 #	 define DBG(...) fprintf(stdout, ##__VA_ARGS__)
 #	 define FDBG(...) fprintf(stdout, ##__VA_ARGS__)
 #	 define DEBUGGER raise(SIGTRAP)

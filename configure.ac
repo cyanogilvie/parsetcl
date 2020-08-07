@@ -38,15 +38,17 @@ AC_CONFIG_AUX_DIR(tclconfig)
 TEA_PATH_TCLCONFIG
 TEA_LOAD_TCLCONFIG
 
-TEA_PATH_CONFIG(tdom)
-TEA_LOAD_CONFIG(tdom)
-
 #--------------------------------------------------------------------
 # Load the tkConfig.sh file if necessary (Tk extension)
 #--------------------------------------------------------------------
 
 #TEA_PATH_TKCONFIG
 #TEA_LOAD_TKCONFIG
+
+TEA_PATH_CONFIG(tdom)
+TEA_LOAD_CONFIG(tdom)
+
+AC_DEFINE_UNQUOTED([TDOM_VERSION], [${TDOM_VERSION}])
 
 #-----------------------------------------------------------------------
 # Handle the --prefix=... option by defaulting to what Tcl gave.
@@ -76,8 +78,8 @@ TEA_SETUP_COMPILER
 
 TEA_ADD_SOURCES([parsetcl.c])
 TEA_ADD_HEADERS([])
-TEA_ADD_INCLUDES([])
-TEA_ADD_LIBS([${TDOM_STUB_LIB_SPEC}])
+TEA_ADD_INCLUDES([${TDOM_INCLUDE_SPEC}])
+TEA_ADD_LIBS([])
 TEA_ADD_CFLAGS([])
 TEA_ADD_STUB_SOURCES([])
 TEA_ADD_TCL_SOURCES([library/parser.tcl library/parser_utils.tcl])
@@ -147,6 +149,9 @@ TEA_CONFIG_CFLAGS
 
 # Check for required polyfill
 TIP445
+
+# Setup tdom stubs
+TDOM_STUBS
 
 #--------------------------------------------------------------------
 # Set the default compiler switches based on the --enable-symbols option.
