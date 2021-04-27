@@ -1,6 +1,6 @@
 namespace eval ::parsetcl {
 	proc word_braced word { #<<<
-		#$word selectNodes {boolean(*[1][name()='syntax']/text() == "\{")}
+		#$word selectNodes {boolean(*[1][name()='syntax']/text() = "\{")}
 		eq brace [domNode $word getAttribute quoted]
 	}
 
@@ -38,6 +38,33 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
+	proc indent cmd { #<<<
+		set newline	"\n"	;# Can't escape a literal newline in xpath
+
+		# We have a valid indent when one of the following is true:
+		#	- The space token immediately preceding our command token contains a newline
+		#	- The previous command ended with a newline
+		#	- There are no previous commands (we're the first command in the script, and the script isn't a [] expansion in a word)
+		set nodes	[xpath $cmd {
+			preceding-sibling::*[position()=1 and name()='space' and (
+				contains(string(), $newline) or
+				string(preceding::end[1]) = $newline or
+				count(preceding-sibling::command) = 0 and name(../..)!='word'
+			)]
+		}]
+
+		if {[llength $nodes] > 0} {
+			set spacenode	[lindex $nodes 0]
+			set spacetext	[domNode $spacenode asText]
+			if {[regexp {([ \t]*)$} $spacetext - indent]} {
+				return $indent
+			}
+		}
+
+		return ""
+	}
+
+	#>>>
 
 	proc commandwords command { #<<<
 		set words	[xpath $command word]
@@ -53,26 +80,125 @@ namespace eval ::parsetcl {
 
 	#>>>
 
+	namespace eval context {
+		namespace export *
+		namespace ensemble create -prefixes no
+
+		variable stack	{}
+		proc push {name value} { #<<<
+			variable stack
+			dict lappend stack $name $value
+		}
+
+		#>>>
+		proc pop name { #<<<
+			variable stack
+			if {[dict exists $stack $name]} {
+				dict set stack $name	[lrange [dict get $stack $name] 0 end-1]
+			}
+		}
+
+		#>>>
+		proc get {name args} { #<<<
+			variable stack
+
+			switch -exact -- [llength $args] {
+				0 - 1 {}
+				default {
+					throw {TCL WRONGARGS} "Wrong number of args, should be: context get name ?default?"
+				}
+			}
+
+			if {[dict exists $stack $name]} {
+				lindex [dict get $stack $name] end
+			} else {
+				if {[llength $args] == 1} {
+					return [lindex $args 0]
+				}
+				throw [list PARSETCL NO_CONTEXT $name] "No current context for $name"
+			}
+		}
+
+		#>>>
+		proc get_all name { #<<<
+			variable stack
+
+			if {[dict exists $stack $name]} {
+				dict get $stack $name
+			} else {
+				return {}
+			}
+		}
+
+		#>>>
+	}
+
+	proc resolve_name {namespace_context name} { #<<<
+		if {![domNode $name hasAttribute value]} {
+			# TODO: what?
+		}
+
+		set name_value	[domNode $name getAttribute value]
+		if {[string match ::* $name]} {
+			# First check if $name is fully qualified already
+			return $name
+		}
+
+		set qualifiers	[namespace qualifiers $name_value]
+		set tail		[namespace tail $name_value]
+		if {[string match ::* $qualifiers]} {
+			return ${qualifiers}::$name
+		}
+
+		foreach ns_context [lreverse $namespace_context] {
+			set ns	[type::get namespace_word $ns_context]
+			if {[json isnull $ns]} {
+				# ??
+			}
+		}
+	}
+
+	#>>>
+
 	variable cmd_parsers {
 		"if" {cmd { #<<<
-			coroutine nextword	commandwords $cmd
-			try {
-				nextword	;# pop "if"
-				subparse expr [nextword]
+			set nextword	nextword_[incr ::_parsetcl_nextword_seq]
+			coroutine $nextword	commandwords $cmd
 
-				set word	[nextword]
-				if {[domNode $word getAttribute value] eq "then"} {set word [nextword]}
-				subparse script $word
+			try {
+				$nextword	;# pop "if"
+				set if_expr	[$nextword]
+				subparse expr $if_expr
+				set parse_body	1
+				if {[domNode $if_expr hasAttribute value]} {
+					if {[domNode $if_expr getAttribute value] eq "0"} {
+						# Support if 0 {} style comments containing non-tcl
+						set parse_body	0
+					}
+				}
+
+				set word	[$nextword]
+				if {[domNode $word hasAttribute value] && [domNode $word getAttribute value] eq "then"} {set word [$nextword]}
+				if {$parse_body} {
+					subparse script $word
+				}
 
 				while 1 {
-					set word	[nextword]
+					set word	[$nextword]
 					switch -exact -- [domNode $word getAttribute value] {
 						"elseif" {
-							subparse expr   $word
-							subparse script [nextword]
+							set parse_body	1
+							set elseif_expr	[$nextword]
+							subparse expr   $elseif_expr
+							if {[domNode $elseif_expr hasAttribute value] && [domNode $elseif_expr getAttribute value] eq "0"} {
+								# if 0 {} style comment - don't parse the body (which may not be Tcl)
+								$nextword
+							} else {
+								subparse script [$nextword]
+							}
 						}
 						"else" {
-							subparse script $word
+							subparse script [$nextword]
 							break
 						}
 						default {
@@ -83,7 +209,7 @@ namespace eval ::parsetcl {
 				}
 			} trap {PARSETCL DONE} {} {
 			} finally {
-				catch {rename nextword {}}
+				catch {rename $nextword {}}
 			}
 			#>>>
 		}}
@@ -99,16 +225,30 @@ namespace eval ::parsetcl {
 			set words		[xpath $cmd word]
 			set iterators	[lrange $words 1 end-1]
 			foreach {varlist elements} $iterators {
-				subparse list $varlist
-				subparse list $elements
+				#puts stderr "varlist: ($varlist), elements: ($elements)"
+				if {[domNode $varlist hasAttribute value]} {
+					subparse list $varlist
+				} else {
+					# TODO: warn about this
+				}
+				if {[domNode $elements hasAttribute value]} {
+					subparse list $elements
+				} else {
+					# TODO: warn about this
+				}
 			}
 			set body		[lindex $words end]
-			subparse script $body
+			if {[domNode $body hasAttribute value]} {
+				subparse script $body
+			} else {
+				# TODO: warn about this
+			}
+			#puts stderr "<- foreach cmd parser $cmd"
 			#>>>
 		}}
 		"lmap"			{cmd { ::parsetcl::parse_command $cmd foreach			}}
 		"for" {cmd { #<<<
-			lassign [xpath $cmd word] setup condition next body
+			lassign [xpath $cmd word] - setup condition next body
 			subparse script $setup
 			subparse expr   $condition
 			subparse script $next
@@ -116,7 +256,7 @@ namespace eval ::parsetcl {
 			#>>>
 		}}
 		"while" {cmd { #<<<
-			lassign [xpath $cmd word] condition body
+			lassign [lrange [xpath $cmd word] 1 end] condition body
 			subparse expr   $condition
 			subparse script $body
 			#>>>
@@ -135,7 +275,19 @@ namespace eval ::parsetcl {
 			subparse subst [lindex $words end] {*}$switches
 			#>>>
 		}}
-		"proc"			{cmd { subparse script [xpath $cmd { word[last()] }]	}}
+		"proc"			{cmd {
+			#puts stderr "-> proc subcommand parse"
+			set name	[xpath $cmd {word[2]}]
+			set fqname	[resolve_name [context get_all namespace] $name]
+			#if {[domNode $name hasAttribute value]} {
+			#	puts stderr "parsing proc \"[domNode $name getAttribute value]\""
+			#} else {
+			#	puts stderr "parsing proc \"[domNode $name asText]\""
+			#}
+			subparse list [xpath $cmd {word[3]}]
+			subparse script [xpath $cmd { word[last()] }]
+			#puts stderr "<- proc subcommand parse"
+		}}
 		"oo::class"		{cmd { subparse script [xpath $cmd { word[last()] }]	}}
 		"method"		{cmd { subparse script [xpath $cmd { word[last()] }]	}}
 		"constructor"	{cmd { subparse script [xpath $cmd { word[last()] }]	}}
@@ -155,7 +307,11 @@ namespace eval ::parsetcl {
 			set subcommand	[lindex $words 1]
 			if {![domNode $subcommand hasAttribute value]} return
 			switch -exact -- [domNode $subcommand getAttribute value] {
-				eval { subparse script [lindex $words 2] }
+				eval {
+					context push namespace [lindex $words 2]
+					subparse script [lindex $words 3]
+					context pop namespace
+				}
 			}
 			# TODO: namespace code, namespace inscope, etc
 			#>>>
@@ -175,15 +331,19 @@ namespace eval ::parsetcl {
 			#>>>
 		}}
 		"try" {cmd { #<<<
-			#puts stderr "try cmd parser, [$cmd asXML]"
 			set next		{}
 			foreach word [xpath $cmd word] {
-				#puts stderr "word: ([$word asXML])"
 				if {[llength $next] > 0} {
 					set next	[lassign $next type]
 					if {$type ne ""} {
 						#puts stderr "Interpreting word as $type and subparsing: [$word asXML]"
-						subparse $type $word
+						if {[domNode $word hasAttribute value]} {
+							#puts stderr "-> try parsing $type $word"
+							subparse $type $word
+							#puts stderr "<- try parsing $type $word"
+						} else {
+							# TODO: warn about this
+						}
 					}
 					continue
 				}
@@ -195,7 +355,6 @@ namespace eval ::parsetcl {
 					finally	{set next	script}
 				}
 			}
-			#puts stderr "try cmd_parse result: [$cmd asXML]"
 			#>>>
 		}}
 		"eval" {cmd { #<<<
@@ -212,7 +371,7 @@ namespace eval ::parsetcl {
 			set words	[xpath $cmd word]
 			if {
 				[domNode [lindex $words $i] hasAttribute value] &&
-				[regexp {^[0-9#]} [domNode [lindex $words $i] getAttribute value]
+				[regexp {^[0-9#]} [domNode [lindex $words $i] getAttribute value]]
 			} {
 				incr i
 			}
@@ -222,7 +381,37 @@ namespace eval ::parsetcl {
 				return
 			}
 
-			subparse script [lindex $words end]
+			set script	[lindex $words end]
+			#puts "------------------ uplevel script word: ($script) ---------------------------"
+			if {[domNode $script hasAttribute value]} {
+				subparse script $script
+			} elseif {[xpath $script {
+				boolean(
+					count(*) = 1 and
+					script[
+						count(command) = 1
+					]/command[1][
+						@name = 'list' and
+						count(word) > 1
+					]
+				)
+			}]} {
+				# Uplevel script arg is not a static literal, but is a list, attempt a deep-parse recursion
+				set script_cmd_words	[lrange [xpath $script {script/command[1]/word}] 1 end]
+				#puts stderr "script_cmd_words: ($script_cmd_words)"
+				if {![domNode [lindex $script_cmd_words 0] hasAttribute value]} {
+					# TODO: warn about this
+					return
+				}
+				set cmdname	[domNode [lindex $script_cmd_words 0] getAttribute value]
+				# TODO: call the cmd_parser for $cmdname on the args of the
+				# [list] command.  Difficulty is that the cmd_parsers expect to
+				# be passed a command domnode, where the word children are the
+				# words of the command, but what we have is a list command,
+				# with the cmdname being the 2nd word of the [list] command
+				#::parsetcl::parse_command [domNode $script_cmd_words parentNode] $cmdname
+				puts stderr "Would chain to parsing $cmdname from \[list\] arg to uplevel"
+			}
 			#>>>
 		}}
 		"switch" {cmd { #<<<
@@ -236,11 +425,11 @@ namespace eval ::parsetcl {
 
 				switch -exact -- [domNode $word getAttribute value] {
 					-exact - -glob - -regexp - -nocase {
-						incr i	2
+						incr i	1
 						continue
 					}
 					-matchvar - -indexar {
-						incr i	3
+						incr i	2
 						continue
 					}
 					-- {
@@ -287,13 +476,19 @@ namespace eval ::parsetcl {
 					puts stderr "handler for [domNode $match asText] has no static value"
 					continue
 				}
+				if {[domNode $handler getAttribute value] eq "-"} continue
 				subparse script $handler
 			}
 			#>>>
 		}}
 		"dict" {cmd { #<<<
 			set words	[xpath $cmd word]
-			switch -exact -- [lindex $words 1] {
+			set subcmd	[lindex $words 1]
+			if {![domNode $subcmd hasAttribute value]} {
+				# TODO: warn about this
+				continue
+			}
+			switch -exact -- [domNode $subcmd getAttribute value] {
 				filter {
 					if {[domNode [lindex $words 3] getAttribute value] eq "script"} {
 						subparse script [lindex $words 5]
@@ -303,6 +498,30 @@ namespace eval ::parsetcl {
 					subparse script [lindex $words end]
 				}
 			}
+			#>>>
+		}}
+		"apply" {cmd { #<<<
+			#puts stderr "cmd_parse apply"
+			set lambda_word	[lindex [xpath $cmd {word[2]}] 0]
+			if {[domNode $lambda_word hasAttribute value]} {
+				#puts stderr "apply literal, string case"
+				subparse list $lambda_word
+				set lambda_words	[xpath $lambda_word as/list/word]
+			} else {
+				#puts stderr "apply literal, dynamic case"
+				set lambda_words	[xpath $lambda_word {
+					count(*)=1 and
+					script[count(command)=1]/command[@name='list']/word[position()>1]
+				}]
+			}
+			#puts stderr "lambda_words: $lambda_words\n[domNode $lambda_word asXML]"
+			#puts stderr "lambda_words: $lambda_words"
+			if {[llength $lambda_words] < 2 || [llength $lambda_words] > 3} return
+
+			set body	[lindex $lambda_words 1]
+			#puts stderr "subparsing: [domNode $body asXML]"
+			subparse script $body
+			#puts stderr "apply cmd: [domNode $cmd asXML]"
 			#>>>
 		}}
 	}

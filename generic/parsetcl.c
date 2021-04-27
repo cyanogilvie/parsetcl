@@ -17,7 +17,7 @@
 	domSetAttributeEx(node, (attr), sizeof((attr))-1, (value), sizeof((value))-1)
 
 #define EMIT(type, parent, from, length) \
-	if (full && (length)) { \
+	if (full && (length)>0) { \
 		domNode*	node = domNewElementNode(doc, (type)); \
 		domAppendNewTextNode(node, (from), (length), TEXT_NODE, 0); \
 		if (full) { \
@@ -224,7 +224,7 @@ uint32_t digits10(uint64_t v) //{{{
 		if (v < P08) {
 			if (v < P06) {
 				if (v < P04) return 4;
-				return 5 + (v < P05);
+				return 5 + (v >= P05);
 			}
 			return 7 + (v >= P07);
 		}
@@ -250,7 +250,7 @@ int u64toa(uint64_t value, char* restrict dst) //{{{
 	uint32_t next = length-1;
 
 	while (value >= 100) {
-		const int i = (value % 100) + 2;
+		const int i = (value % 100) * 2;
 		value /= 100;
 		memcpy(dst+next-1, digits+i, 2);
 		//dst[next] = digits[i+1];
@@ -370,9 +370,18 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 			case TCL_TOKEN_BS:
 				toknode = domNewElementNode(doc, "escape");
 				if (full) {
+					/*
+					char idxstr[22];
+					u64toa(subtokens[t].start-text+ofs, idxstr);
+					fprintf(stderr, "idx: %ld, str: (%s)\n", subtokens[t].start-text+ofs, idxstr);
+					*/
 					SET_INT_ATTR(toknode, "idx", subtokens[t].start-text+ofs);
 					SET_INT_ATTR(toknode, "len", subtokens[t].size);
 				}
+				//if (subtokens[t].size > 1 && subtokens[t].start[1] == '\n') { // Line folding
+				//	fprintf(stderr, "Line folding case, adjusting by %d\n", subtokens[t].size-1);
+				//	ofs -= subtokens[t].size-1;
+				//}
 				domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
 				domAppendChild(parent, toknode);
 				if (!*dynamic) {
@@ -453,7 +462,7 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 							parent,
 							subtokens[t].start+1,
 							subtokens[t].size-1,
-							subtokens[t].start - text + ofs,
+							subtokens[t].start+1 - text + ofs,
 							lineofs,
 							1,
 							NULL);
@@ -473,6 +482,22 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 						SET_INT_ATTR(toknode, "len", subtokens[t].size);
 					}
 					//domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
+					domSetAttributeEx(toknode, "orig", sizeof("orig")-1, subtokens[t].start, subtokens[t].size);
+					/*
+					{
+						Tcl_Obj* tmp = NULL;
+
+						replace_tclobj(&tmp, Tcl_NewStringObj(subtokens[t].start, subtokens[t].size));
+						fprintf(stderr, "subexpr: ->%s<-\n", Tcl_GetString(tmp));
+						release_tclobj(&tmp);
+					}
+					*/
+					if (subtokens[t].size) {
+						switch (subtokens[t].start[0]) {
+							case '"': SET_CONST_ATTR(toknode, "quoted", "quote"); break;
+							case '{': SET_CONST_ATTR(toknode, "quoted", "brace"); break;
+						}
+					}
 					domAppendChild(parent, toknode);
 
 					Tcl_DStringInit(&value);
@@ -584,9 +609,8 @@ static int subparse_script( //{{{
 
 	scriptnode = domNewElementNode(doc, "script");
 	domAppendChild(parent, scriptnode);
-	if (full) {
+	if (full)
 		SET_INT_ATTR(scriptnode, "idx", ofs);
-	}
 
 	while (base < textend && !done) {
 		int			word = 0;
@@ -748,9 +772,17 @@ static int subparse_script( //{{{
 					if (TCL_OK == Tcl_DictObjGet(NULL, cmd_parsers, cmdname, &lambda)) {
 						if (lambda) Tcl_IncrRefCount(lambda);
 						replace_tclobj(&cmd_parser, lambda);
+					} else {
+						//fprintf(stderr, "No cmd_parser found for (%s)\n", Tcl_GetString(cmdname));
+						release_tclobj(&cmd_parser);
 					}
 					release_tclobj(&cmdname);
 					release_tclobj(&lambda);
+				}
+			} else {
+				if (word == 1) {
+					//fprintf(stderr, "command name word is not static\n");
+					release_tclobj(&cmd_parser);
 				}
 			}
 			Tcl_DStringFree(&value);
@@ -764,11 +796,22 @@ static int subparse_script( //{{{
 					// Falls through
 				case '\n':
 				case ';':
-					EMIT("space", cmdnode, last_wordend, commandEnd-last_wordend-1);
-					EMIT("end",   cmdnode, commandEnd-1, 1);
+					if (1 && cmdnode) {
+						EMIT("space", cmdnode, last_wordend, commandEnd-last_wordend-1);
+						EMIT("end",   cmdnode, commandEnd-1, 1);
+					} else {
+						// TODO: Should these always go onto scriptnode?
+						EMIT("space", scriptnode, last_wordend, commandEnd-last_wordend-1);
+						EMIT("end",   scriptnode, commandEnd-1, 1);
+					}
 					break;
 				default:
-					EMIT("space", cmdnode, last_wordend, commandEnd-last_wordend);
+					if (0 && cmdnode) {
+						EMIT("space", cmdnode, last_wordend, commandEnd-last_wordend);
+					} else {
+						// TODO: Should these always go onto scriptnode?
+						EMIT("space", scriptnode, last_wordend, commandEnd-last_wordend);
+					}
 			}
 		} else {
 			/*
@@ -789,13 +832,49 @@ static int subparse_script( //{{{
 			char		nodecmd[80];
 
 			tcldom_createNodeObj(interp, cmdnode, (char*)&nodecmd);
+			//fprintf(stderr, "Created dom command: (%s) for cmdnode: %p\n", nodecmd, cmdnode);
 			replace_tclobj(&cmd, Tcl_NewListObj(0, NULL));
 			code = Tcl_ListObjAppendElement(interp, cmd, l->lit[LIT_APPLY]);
 			if (code == TCL_OK) code = Tcl_ListObjAppendElement(interp, cmd, cmd_parser);
 			if (code == TCL_OK) code = Tcl_ListObjAppendElement(interp, cmd, Tcl_NewStringObj(nodecmd, -1));
 			if (code == TCL_OK) code = Tcl_EvalObjEx(interp, cmd, TCL_EVAL_DIRECT | TCL_EVAL_GLOBAL);
+			if (code != TCL_OK) {
+				Tcl_Obj*	getXML = NULL;
+				Tcl_Obj*	res = NULL;
+				Tcl_Obj*	options = NULL;
+				int			oldcode = code;
+
+				code = TCL_OK;
+
+				replace_tclobj(&options, Tcl_GetReturnOptions(interp, code));
+				replace_tclobj(&getXML, Tcl_NewListObj(0, NULL));
+				replace_tclobj(&res, Tcl_GetObjResult(interp));
+
+				if (code == TCL_OK) code = Tcl_ListObjAppendElement(interp, getXML, Tcl_NewStringObj("domNode", -1));
+				if (code == TCL_OK) code = Tcl_ListObjAppendElement(interp, getXML, Tcl_NewStringObj(nodecmd, -1));
+				if (code == TCL_OK) code = Tcl_ListObjAppendElement(interp, getXML, Tcl_NewStringObj("asXML", -1));
+				if (code == TCL_OK) code = Tcl_EvalObjEx(interp, getXML, TCL_EVAL_DIRECT | TCL_EVAL_GLOBAL);
+				if (code == TCL_OK) {
+					const char*	asXML = Tcl_GetString(Tcl_GetObjResult(interp));
+					const char*	cmdname = NULL;
+
+					if (TCL_OK == get_attr(NULL, cmdnode, "name", &cmdname)) {
+						//fprintf(stderr, "Could not parse command (%s): %s\n%s\n", cmdname, Tcl_GetString(cmd), asXML);
+						fprintf(stderr, "Could not parse command (%s): %s\n", cmdname, Tcl_GetString(cmd));
+					} else {
+						//fprintf(stderr, "Could not parse command: %s\n%s\n", Tcl_GetString(cmd), asXML);
+						fprintf(stderr, "Could not parse command: %s\n", Tcl_GetString(cmd));
+					}
+				}
+				Tcl_SetReturnOptions(interp, options);
+				Tcl_SetObjResult(interp, res);
+				release_tclobj(&getXML);
+				release_tclobj(&res);
+				release_tclobj(&options);
+				code = oldcode;
+				goto finally;
+			}
 			release_tclobj(&cmd);
-			if (code != TCL_OK) goto finally;
 			Tcl_ResetResult(interp);
 		}
 
@@ -871,7 +950,7 @@ static int subparse_expr( //{{{
 				*/
 
 		if (spacelen)
-			EMIT("space", parent, last_wordend, spacelen);
+			EMIT("space", exprnode, last_wordend, spacelen);
 
 		last_wordend = token->start + token->size;
 
@@ -901,6 +980,9 @@ static int subparse_expr( //{{{
 			t += 1 + token->numComponents;
 		}
 	}
+
+	if (last_wordend < text+textlen)
+		EMIT("space", exprnode, last_wordend, text+textlen-last_wordend);
 
 	Tcl_FreeParse(&parse);
 
@@ -1008,7 +1090,7 @@ static int parse_combined(Tcl_Interp* interp, struct pidata* l, const int braced
 	}
 
 	if (full) {
-		const int idx = i+1+ofs;
+		const int idx = i+ofs;
 		SET_INT_ATTR(wordnode, "idx", idx);
 		SET_INT_ATTR(wordnode, "len", end - (text+i));
 	}
@@ -1080,9 +1162,8 @@ static int subparse_list( //{{{
 
 	listnode = domNewElementNode(doc, "list");
 	domAppendChild(parent, listnode);
-	if (full) {
+	if (full)
 		SET_INT_ATTR(listnode, "idx", ofs);
-	}
 
 	while (i < textlen) { // Each word
 		const int	start = i;
@@ -1144,8 +1225,10 @@ static int subparse_list( //{{{
 									continue;
 								}
 
-								if (i > chunkstart)
+								if (i > chunkstart) {
 									Tcl_DStringAppend(&value, text+chunkstart, i-chunkstart);
+									EMIT("text", wordnode, text+chunkstart, i-chunkstart);
+								}
 
 								i++;
 								switch (text[i]) {
@@ -1166,6 +1249,7 @@ static int subparse_list( //{{{
 											const int consumed = parse_hex(text+i+1, textlen-i-1);
 											code = escape_value(interp, text+i-1, consumed+2, &value);
 											if (code != TCL_OK) goto finally;
+											EMIT("escape", wordnode, text+i-1, consumed+2);
 											i += consumed+1;
 										}
 										break;
@@ -1174,6 +1258,7 @@ static int subparse_list( //{{{
 										{
 											const int consumed = parse_hex(text+i+1, min(4, textlen-i-1));
 											code = escape_value(interp, text+i-1, consumed+2, &value);
+											EMIT("escape", wordnode, text+i-1, consumed+2);
 											if (code != TCL_OK) goto finally;
 											i += consumed+1;
 										}
@@ -1183,6 +1268,7 @@ static int subparse_list( //{{{
 										{
 											const int consumed = parse_octal(text+i+1, min(3, textlen-i-1));
 											code = escape_value(interp, text+i-1, consumed+1, &value);
+											EMIT("escape", wordnode, text+i-1, consumed+1);
 											if (code != TCL_OK) goto finally;
 											i += consumed;
 										}
@@ -1196,12 +1282,14 @@ static int subparse_list( //{{{
 								i++;
 								continue;
 						}
-
-						if (i > chunkstart)
-							Tcl_DStringAppend(&value, text+chunkstart, i-chunkstart);
-
 						break;
 					}
+
+					if (i > chunkstart) {
+						Tcl_DStringAppend(&value, text+chunkstart, i-chunkstart);
+						EMIT("text", wordnode, text+chunkstart, i-chunkstart);
+					}
+
 
 					if (full) {
 						SET_INT_ATTR(wordnode, "idx", wordstart+ofs);
@@ -1209,9 +1297,6 @@ static int subparse_list( //{{{
 					}
 
 					SET_VALUE_ATTRIB(wordnode, &value);
-
-					if (i > wordstart)
-						EMIT("text", wordnode, text+wordstart, i-wordstart);
 				}
 				break;
 		}
@@ -1386,6 +1471,7 @@ static int subparse_subst( //{{{
 									i++;
 									continue;
 							}
+							break;
 						}
 						start = i;
 						continue;
@@ -1451,13 +1537,19 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 		"expr",
 		"list",
 		"subst",
+		"sql",
+		"json",
+		"javascript",
 		NULL
 	};
 	enum {
 		MODE_SCRIPT,
 		MODE_EXPR,
 		MODE_LIST,
-		MODE_SUBST
+		MODE_SUBST,
+		MODE_SQL,
+		MODE_JSON,
+		MODE_JAVASCRIPT
 	};
 	int	mode;
 	domDocument*	doc = NULL;
@@ -1478,6 +1570,7 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 	code = Tcl_GetIndexFromObj(interp, objv[1], modes, "mode", TCL_EXACT, &mode);
 	if (code != TCL_OK) goto finally;
 
+	//fprintf(stderr, "subparse %s %s\n", modes[mode], Tcl_GetString(objv[2]));
 	wordnode = tcldom_getNodeFromName(interp, Tcl_GetString(objv[2]), &errmsg);
 	if (wordnode == NULL) {
 		Tcl_SetObjResult(interp, errmsg ?
@@ -1503,17 +1596,30 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 	}
 
 	// Extract text from word {{{
-	code = get_attr(interp, wordnode, "value", &text);
-	if (code != TCL_OK) goto finally;
+	//code = get_attr(interp, wordnode, "value", &text);
+	//if (code != TCL_OK) goto finally;
+	code = get_attr(NULL, wordnode, "value", &text);
+	if (code != TCL_OK) {
+		// TODO: warn about this (word to subparse doesn't have a static literal value)
+		code = TCL_OK;
+		goto finally;
+	}
+
 	if (full) {
+		const char* quoted = NULL;
 		code = get_attr(interp, wordnode, "idx",   &idx);
 		if (code != TCL_OK) goto finally;
-
 		sscanf(idx, "%d%n", &ofs, &scanned);
 		if (scanned < strlen(idx)) {
 			Tcl_SetObjResult(interp, Tcl_ObjPrintf("Invalid idx value: \"%s\", must be an integer, scanned: %d, strlen(idx): %ld", idx, scanned, strlen(idx)));
 			code = TCL_ERROR;
 			goto finally;
+		}
+
+		code = get_attr(NULL, wordnode, "quoted",  &quoted);
+		if (code == TCL_OK) {
+			// Word being parsed is quoted, adjust the offset for the quote char
+			ofs++;
 		}
 	} else {
 		ofs = 0;
@@ -1539,7 +1645,10 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 					0,
 					NULL);
 
-			if (code != TCL_OK) goto finally;
+			if (code != TCL_OK) {
+				Tcl_SetObjResult(interp, Tcl_ObjPrintf("Error parsing \"%s\" as Tcl script: %s", text, Tcl_GetString(Tcl_GetObjResult(interp))));
+				goto finally;
+			}
 			break;
 
 		case MODE_EXPR:
@@ -1626,6 +1735,22 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 						0);
 
 				if (code != TCL_OK) goto finally;
+			}
+			break;
+
+		case MODE_SQL:
+		case MODE_JSON:
+		case MODE_JAVASCRIPT:
+			{
+				domNode*	typenode = domNewElementNode(doc, modes[mode]);
+
+				domAppendNewTextNode(typenode, text, strlen(text), TEXT_NODE, 0);
+				if (full) {
+					SET_INT_ATTR(typenode, "idx", ofs);
+					SET_INT_ATTR(typenode, "len", strlen(text));
+				}
+				SET_CONST_ATTR(typenode, "unparsed", "");
+				domAppendChild(asnode, typenode);
 			}
 			break;
 

@@ -9,3 +9,7 @@ configure
 *.so
 *.o
 pkgIndex.tcl
+
+design.txt
+*.js
+line_lookup.tcl
