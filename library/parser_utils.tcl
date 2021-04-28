@@ -163,7 +163,7 @@ namespace eval ::parsetcl {
 	variable cmd_parsers {
 		"if" {cmd { #<<<
 			set nextword	nextword_[incr ::_parsetcl_nextword_seq]
-			coroutine $nextword	commandwords $cmd
+			coroutine $nextword	::parsetcl::commandwords $cmd
 
 			try {
 				$nextword	;# pop "if"
@@ -212,7 +212,7 @@ namespace eval ::parsetcl {
 				catch {rename $nextword {}}
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"expr"		{cmd { #<<<
 			set words	[xpath $cmd word]
 			if {[llength $words] > 2} {
@@ -220,7 +220,7 @@ namespace eval ::parsetcl {
 			}
 			subparse expr [lindex $words 1]
 			#>>>
-		}}
+		} ::parsetcl}
 		"foreach"	{cmd { #<<<
 			set words		[xpath $cmd word]
 			set iterators	[lrange $words 1 end-1]
@@ -245,8 +245,8 @@ namespace eval ::parsetcl {
 			}
 			#puts stderr "<- foreach cmd parser $cmd"
 			#>>>
-		}}
-		"lmap"			{cmd { ::parsetcl::parse_command $cmd foreach			}}
+		} ::parsetcl}
+		"lmap"			{cmd { ::parsetcl::parse_command $cmd foreach			} ::parsetcl}
 		"for" {cmd { #<<<
 			lassign [xpath $cmd word] - setup condition next body
 			subparse script $setup
@@ -254,13 +254,13 @@ namespace eval ::parsetcl {
 			subparse script $next
 			subparse script $body
 			#>>>
-		}}
+		} ::parsetcl}
 		"while" {cmd { #<<<
 			lassign [lrange [xpath $cmd word] 1 end] condition body
 			subparse expr   $condition
 			subparse script $body
 			#>>>
-		}}
+		} ::parsetcl}
 		"subst" {cmd { #<<<
 			set words	[xpath $cmd word]
 			set switches	[lmap word [lrange $words 1 end-1] {
@@ -274,7 +274,7 @@ namespace eval ::parsetcl {
 			}]
 			subparse subst [lindex $words end] {*}$switches
 			#>>>
-		}}
+		} ::parsetcl}
 		"proc"			{cmd {
 			#puts stderr "-> proc subcommand parse"
 			set name	[xpath $cmd {word[2]}]
@@ -287,21 +287,51 @@ namespace eval ::parsetcl {
 			subparse list [xpath $cmd {word[3]}]
 			subparse script [xpath $cmd { word[last()] }]
 			#puts stderr "<- proc subcommand parse"
-		}}
-		"oo::class"		{cmd { subparse script [xpath $cmd { word[last()] }]	}}
-		"method"		{cmd { subparse script [xpath $cmd { word[last()] }]	}}
-		"constructor"	{cmd { subparse script [xpath $cmd { word[last()] }]	}}
-		"destructor"	{cmd { subparse script [xpath $cmd { word[last()] }]	}}
-		"catch"			{cmd { subparse script [xpath $cmd { word[2] }]			}}
-		"time"			{cmd { subparse script [xpath $cmd { word[2] }]			}}
+		} ::parsetcl}
+		"oo::class"		{cmd { subparse script [xpath $cmd { word[last()] }]	} ::parsetcl}
+		"method"		{cmd { subparse script [xpath $cmd { word[last()] }]	} ::parsetcl}
+		"constructor"	{cmd { subparse script [xpath $cmd { word[last()] }]	} ::parsetcl}
+		"destructor"	{cmd { subparse script [xpath $cmd { word[last()] }]	} ::parsetcl}
+		"catch"			{cmd { subparse script [xpath $cmd { word[2] }]			} ::parsetcl}
+		"time"			{cmd { subparse script [xpath $cmd { word[2] }]			} ::parsetcl}
 		"timerate"	{cmd { #<<<
-			# First arg that isn't an option (starting with "-")
-			foreach word [xpath $cmd word] {
-				if {[string index [domNode $word getAttribute value] 0] eq "-"} continue
-				subparse script $word
+			set nextword	nextword_[incr ::_parsetcl_nextword_seq]
+			coroutine $nextword	::parsetcl::commandwords $cmd
+			try {
+				$nextword	;# pop "timerate"
+				while 1 {
+					set word	[$nextword]
+					if {![domNode $word hasAttribute value]} {
+						# Dynamic word, can't follow the syntax for sure.  Just attempt to find the first brace quoted word and parse that
+						while 1 {
+							set word	[$nextword]
+							if {
+								[domNode $word hasAttribute value] &&
+								[domNode $word hasAttribute quoted] &&
+								[domNode $word getAttribute quoted] eq "brace"
+							} {
+								subparse script $word
+								return
+							}
+						}
+					}
+					switch -glob -- [domNode $word getAttribute value] {
+						-calibrate {}
+						-direct	{}
+						-overhead {
+							$nextword	;# pop the value
+						}
+						default {
+							subparse script $word
+							break
+						}
+					}
+				}
+			} trap {PARSETCL DONE} {} {
+			} finally {
+				catch {rename $nextword {}}
 			}
-			#>>>
-		}}
+		} ::parsetcl}
 		"namespace" {cmd { #<<<
 			set words		[xpath $cmd word]
 			set subcommand	[lindex $words 1]
@@ -315,21 +345,21 @@ namespace eval ::parsetcl {
 			}
 			# TODO: namespace code, namespace inscope, etc
 			#>>>
-		}}
+		} ::parsetcl}
 		"oo::define" {cmd { #<<<
 			set words		[xpath $cmd word]
 			if {[llength $words] == 3} {
 				subparse script [lindex $words end]
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"oo::objdefine" {cmd { #<<<
 			set words		[xpath $cmd word]
 			if {[llength $words] == 3} {
 				subparse script [lindex $words end]
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"try" {cmd { #<<<
 			set next		{}
 			foreach word [xpath $cmd word] {
@@ -356,7 +386,7 @@ namespace eval ::parsetcl {
 				}
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"eval" {cmd { #<<<
 			set words	[xpath $cmd word]
 			if {[llength $words] == 2} {subparse script [lindex $words 1]} else {
@@ -365,7 +395,7 @@ namespace eval ::parsetcl {
 				# to put them in the tree?
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"uplevel" {cmd { #<<<
 			set i	1
 			set words	[xpath $cmd word]
@@ -413,7 +443,7 @@ namespace eval ::parsetcl {
 				puts stderr "Would chain to parsing $cmdname from \[list\] arg to uplevel"
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"switch" {cmd { #<<<
 			set i				1
 			set skipping_args	true
@@ -480,7 +510,7 @@ namespace eval ::parsetcl {
 				subparse script $handler
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"dict" {cmd { #<<<
 			set words	[xpath $cmd word]
 			set subcmd	[lindex $words 1]
@@ -499,7 +529,7 @@ namespace eval ::parsetcl {
 				}
 			}
 			#>>>
-		}}
+		} ::parsetcl}
 		"apply" {cmd { #<<<
 			#puts stderr "cmd_parse apply"
 			set lambda_word	[lindex [xpath $cmd {word[2]}] 0]
@@ -523,7 +553,7 @@ namespace eval ::parsetcl {
 			subparse script $body
 			#puts stderr "apply cmd: [domNode $cmd asXML]"
 			#>>>
-		}}
+		} ::parsetcl}
 	}
 }
 
