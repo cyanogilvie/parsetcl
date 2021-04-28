@@ -77,7 +77,7 @@ Tcl_ObjType parsetree = {
 	NULL,
 };
 
-Tcl_ObjType ast = {
+Tcl_ObjType astObjtype = {
 	"ast",
 	free_parsetree,
 	dup_parsetree,
@@ -855,7 +855,7 @@ static int subparse_script( //{{{
 				if (code == TCL_OK) code = Tcl_ListObjAppendElement(interp, getXML, Tcl_NewStringObj("asXML", -1));
 				if (code == TCL_OK) code = Tcl_EvalObjEx(interp, getXML, TCL_EVAL_DIRECT | TCL_EVAL_GLOBAL);
 				if (code == TCL_OK) {
-					const char*	asXML = Tcl_GetString(Tcl_GetObjResult(interp));
+					//const char*	asXML = Tcl_GetString(Tcl_GetObjResult(interp));
 					const char*	cmdname = NULL;
 
 					if (TCL_OK == get_attr(NULL, cmdnode, "name", &cmdname)) {
@@ -1052,7 +1052,7 @@ static int parse_combined(Tcl_Interp* interp, struct pidata* l, const int braced
 	int				dynamic = 0;
 	int				code = TCL_OK;
 	int				i = *parent_i;
-	int				t;
+	int				t = 0;
 	Tcl_Parse		parse;
 	Tcl_DString		value;
 
@@ -1832,7 +1832,7 @@ static int get_ast_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, 
 	Tcl_ObjIntRep*		ir = NULL;
 	int					code = TCL_OK;
 
-	ir = Tcl_FetchIntRep(obj, &ast);
+	ir = Tcl_FetchIntRep(obj, &astObjtype);
 	if (ir == NULL) {
 		Tcl_ObjIntRep	newir;
 
@@ -1842,8 +1842,8 @@ static int get_ast_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, 
 		if (TCL_OK != (code = parse_tcl_script(interp, l, obj, (domDocument**)&newir.twoPtrValue.ptr1, 0)))
 			goto finally;
 
-		Tcl_StoreIntRep(obj, &ast, &newir);
-		ir = Tcl_FetchIntRep(obj, &ast);
+		Tcl_StoreIntRep(obj, &astObjtype, &newir);
+		ir = Tcl_FetchIntRep(obj, &astObjtype);
 	}
 
 	*doc = (domDocument*)ir->twoPtrValue.ptr1;

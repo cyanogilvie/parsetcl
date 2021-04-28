@@ -3,13 +3,13 @@ package require parse_args
 package require type
 
 type::define namespace_word {
-	create {{val {
+	create {apply {val {
 		if {[domNode $val hasAttribute value]} {
 			set intrep	[rl_json::json string [domNode $val getAttribute value]]
 		} else {
 			set intrep	null
 		}
-	}}
+	}}}
 }
 
 namespace eval ::parsetcl {
