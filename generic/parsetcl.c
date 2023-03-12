@@ -88,10 +88,10 @@ Tcl_ObjType astObjtype = {
 
 static void free_parsetree(Tcl_Obj* obj) //{{{
 {
-	Tcl_ObjIntRep*	ir = NULL;
+	Tcl_ObjInternalRep*	ir = NULL;
 
 	//fprintf(stderr, "free_parsetree\n");
-	ir = Tcl_FetchIntRep(obj, &parsetree);
+	ir = Tcl_FetchInternalRep(obj, &parsetree);
 	if (ir && ir->twoPtrValue.ptr1) {
 		//fprintf(stderr, "freeing doc: %p\n", ir->twoPtrValue.ptr1);
 		domFreeDocument((domDocument*)ir->twoPtrValue.ptr1, NULL, NULL);
@@ -102,15 +102,15 @@ static void free_parsetree(Tcl_Obj* obj) //{{{
 //}}}
 static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest) //{{{
 {
-	Tcl_ObjIntRep*		srcir = NULL;
-	Tcl_ObjIntRep		destir;
+	Tcl_ObjInternalRep*		srcir = NULL;
+	Tcl_ObjInternalRep		destir;
 	domNode*			srcroot = NULL;
 	domNode*			destroot = NULL;
 	domDocument*		destdoc = NULL;
 
 	fprintf(stderr, "dup_parsetree\n");
 
-	srcir = Tcl_FetchIntRep(src, &parsetree);
+	srcir = Tcl_FetchInternalRep(src, &parsetree);
 	if (srcir == NULL)
 		Tcl_Panic("dup_internal_rep asked to duplicate for type, but that type wasn't available on the src object");
 
@@ -124,16 +124,16 @@ static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest) //{{{
 	destir.twoPtrValue.ptr1 = destdoc;
 	destir.twoPtrValue.ptr2 = destroot;
 
-	Tcl_StoreIntRep(dest, &parsetree, &destir);
+	Tcl_StoreInternalRep(dest, &parsetree, &destir);
 }
 
 //}}}
 static void update_string_rep_parsetree(Tcl_Obj* obj) //{{{
 {
-	Tcl_ObjIntRep*		ir = Tcl_FetchIntRep(obj, &parsetree);
-	Tcl_DString			res;
-	domNode*			child = NULL;
-	domNode*			node = NULL;
+	Tcl_ObjInternalRep*		ir = Tcl_FetchInternalRep(obj, &parsetree);
+	Tcl_DString				res;
+	domNode*				child = NULL;
+	domNode*				node = NULL;
 
 	fprintf(stderr, "update_string_rep_parsetree\n");
 
@@ -1803,12 +1803,12 @@ finally:
 //}}}
 static int get_parsetree_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, domDocument** doc) //{{{
 {
-	Tcl_ObjIntRep*		ir = NULL;
-	int					code = TCL_OK;
+	Tcl_ObjInternalRep*		ir = NULL;
+	int						code = TCL_OK;
 
-	ir = Tcl_FetchIntRep(obj, &parsetree);
+	ir = Tcl_FetchInternalRep(obj, &parsetree);
 	if (ir == NULL) {
-		Tcl_ObjIntRep	newir;
+		Tcl_ObjInternalRep	newir;
 
 		newir.twoPtrValue.ptr1 = NULL;
 		newir.twoPtrValue.ptr2 = NULL;
@@ -1816,8 +1816,8 @@ static int get_parsetree_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj*
 		if (TCL_OK != (code = parse_tcl_script(interp, l, obj, (domDocument**)&newir.twoPtrValue.ptr1, 1)))
 			goto finally;
 
-		Tcl_StoreIntRep(obj, &parsetree, &newir);
-		ir = Tcl_FetchIntRep(obj, &parsetree);
+		Tcl_StoreInternalRep(obj, &parsetree, &newir);
+		ir = Tcl_FetchInternalRep(obj, &parsetree);
 	}
 
 	*doc = (domDocument*)ir->twoPtrValue.ptr1;
@@ -1829,12 +1829,12 @@ finally:
 //}}}
 static int get_ast_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, domDocument** doc) //{{{
 {
-	Tcl_ObjIntRep*		ir = NULL;
+	Tcl_ObjInternalRep*	ir = NULL;
 	int					code = TCL_OK;
 
-	ir = Tcl_FetchIntRep(obj, &astObjtype);
+	ir = Tcl_FetchInternalRep(obj, &astObjtype);
 	if (ir == NULL) {
-		Tcl_ObjIntRep	newir;
+		Tcl_ObjInternalRep	newir;
 
 		newir.twoPtrValue.ptr1 = NULL;
 		newir.twoPtrValue.ptr2 = NULL;
@@ -1842,8 +1842,8 @@ static int get_ast_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, 
 		if (TCL_OK != (code = parse_tcl_script(interp, l, obj, (domDocument**)&newir.twoPtrValue.ptr1, 0)))
 			goto finally;
 
-		Tcl_StoreIntRep(obj, &astObjtype, &newir);
-		ir = Tcl_FetchIntRep(obj, &astObjtype);
+		Tcl_StoreInternalRep(obj, &astObjtype, &newir);
+		ir = Tcl_FetchInternalRep(obj, &astObjtype);
 	}
 
 	*doc = (domDocument*)ir->twoPtrValue.ptr1;

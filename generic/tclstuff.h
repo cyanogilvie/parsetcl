@@ -3,7 +3,7 @@
 #ifndef _TCLSTUFF_H
 #define _TCLSTUFF_H
 
-#include "tcl.h"
+#include <tcl.h>
 
 #define NEW_CMD( tcl_cmd, c_cmd ) \
 	Tcl_CreateObjCommand( interp, tcl_cmd, \
@@ -29,17 +29,38 @@
 		goto label;											\
 	}
 
+#define THROW_PRINTF_LABEL( label, var, fmtstr, ... )						\
+	{																		\
+		Tcl_SetObjResult(interp, Tcl_ObjPrintf((fmtstr), ##__VA_ARGS__));	\
+		var = TCL_ERROR;													\
+		goto label;															\
+	}
+
+#define THROW_POSIX_LABEL(label, code, msg) do {							\
+	int err = Tcl_GetErrno();											\
+	const char* errstr = Tcl_ErrnoId();									\
+	Tcl_SetErrorCode(interp, "POSIX", errstr, Tcl_ErrnoMsg(err), NULL);	\
+	THROW_PRINTF_LABEL(label, code, "%s: %s %s", msg, errstr, Tcl_ErrnoMsg(err));	\
+} while(0);
+
 // convenience macro to check the number of arguments passed to a function
 // implementing a tcl command against the number expected, and to throw
 // a tcl error if they don't match.  Note that the value of expected does
 // not include the objv[0] object (the function itself)
 #define CHECK_ARGS(expected, msg)										\
 	if (objc != expected + 1) {											\
-		Tcl_ResetResult( interp );										\
-		Tcl_AppendResult( interp, "Wrong # of arguments.  Must be \"",	\
-						  msg, "\"", NULL );							\
+		Tcl_WrongNumArgs(interp, 1, objv, msg);							\
 		return TCL_ERROR;												\
 	}
+
+#define CHECK_ARGS_LABEL(label, rc, msg) \
+	do { \
+		if (objc != A_objc) { \
+			Tcl_WrongNumArgs(interp, A_cmd+1, objv, "method ?arg ...?"); \
+			rc = TCL_ERROR; \
+			goto label; \
+		} \
+	} while(0);
 
 
 // A rather frivolous macro that just enhances readability for a common case
@@ -69,12 +90,14 @@ static inline void release_tclobj(Tcl_Obj** obj)
 }
 static inline void replace_tclobj(Tcl_Obj** target, Tcl_Obj* replacement)
 {
-	if (*target) {
-		Tcl_DecrRefCount(*target);
-		*target = NULL;
-	}
+	Tcl_Obj*	old = *target;
+
 	*target = replacement;
 	if (*target) Tcl_IncrRefCount(*target);
+	if (old) {
+		Tcl_DecrRefCount(old);
+		old = NULL;
+	}
 }
 
 #if DEBUG
@@ -106,5 +129,7 @@ static inline void replace_tclobj(Tcl_Obj** target, Tcl_Obj* replacement)
 #	define DEBUGGER /* nop */
 #	define TIME(label, task) task
 #endif
+
+#define OBJCMD(name)	int (name)(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *const objv[])
 
 #endif
