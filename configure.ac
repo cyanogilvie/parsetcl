@@ -19,7 +19,7 @@ dnl	to configure the system for the local environment.
 # so that we create the export library with the dll.
 #-----------------------------------------------------------------------
 
-AC_INIT([parsetcl],[0.1])
+AC_INIT([parsetcl],[0.1.2])
 
 #--------------------------------------------------------------------
 # Call TEA_INIT as the first TEA_ macro to set up initial vars.
@@ -152,6 +152,8 @@ TIP445
 
 # Setup tdom stubs
 TDOM_STUBS
+
+TEABASE_INIT()
 
 #--------------------------------------------------------------------
 # Set the default compiler switches based on the --enable-symbols option.

@@ -796,7 +796,7 @@ static int subparse_script( //{{{
 					// Falls through
 				case '\n':
 				case ';':
-					if (1 && cmdnode) {
+					if (0 && cmdnode) {
 						EMIT("space", cmdnode, last_wordend, commandEnd-last_wordend-1);
 						EMIT("end",   cmdnode, commandEnd-1, 1);
 					} else {
