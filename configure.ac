@@ -76,11 +76,11 @@ TEA_SETUP_COMPILER
 # and PKG_TCL_SOURCES.
 #-----------------------------------------------------------------------
 
-TEA_ADD_SOURCES([parsetcl.c])
+TEA_ADD_SOURCES([parsetcl.c obstack_pool.h])
 TEA_ADD_HEADERS([])
 TEA_ADD_INCLUDES([${TDOM_INCLUDE_SPEC}])
 TEA_ADD_LIBS([])
-TEA_ADD_CFLAGS([])
+TEA_ADD_CFLAGS([-std=gnu17])
 TEA_ADD_STUB_SOURCES([])
 TEA_ADD_TCL_SOURCES([library/parser.tcl library/parser_utils.tcl])
 

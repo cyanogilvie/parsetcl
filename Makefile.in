@@ -173,6 +173,8 @@ VALGRIND	= valgrind
 VALGRINDARGS	= --tool=memcheck --num-callers=8 --leak-resolution=high \
 		  --leak-check=yes --show-reachable=yes -v
 
+CONTAINER = parsetcl_build
+
 .SUFFIXES: .c .$(OBJEXT)
 
 #========================================================================
@@ -272,6 +274,16 @@ valgrind: binaries libraries
 
 valgrindshell: binaries libraries
 	$(TCLSH_ENV) $(PKG_ENV) $(VALGRIND) $(VALGRINDARGS) $(TCLSH_PROG) $(SCRIPT)
+
+vim-gdb: binaries libraries
+	$(TCLSH_ENV) $(PKG_ENV) vim -c "set number" -c "set mouse=a" -c "set foldlevel=100" -c "Termdebug -ex set\ print\ pretty\ on --args $(TCLSH_PROG) tests/all.tcl $(TESTFLAGS) -singleproc 1 -load package\ ifneeded\ $(PACKAGE_NAME)\ $(PACKAGE_VERSION)\ [list\ load\ `@CYGPATH@ $(PKG_LIB_FILE)`\ [string\ totitle\ $(PACKAGE_NAME)]]" -c "2windo set nonumber" -c "1windo set nonumber" generic/
+
+container:
+	docker buildx build -t $(CONTAINER) .
+
+build-container: container
+	mkdir -p "$(top_builddir)/dockerbuild"
+	docker run --rm -it -v "$(realpath $(srcdir)):/src/local:ro" -v "$(top_builddir)/dockerbuild:/install" $(CONTAINER) tclsh /src/local/dbuild.tcl "$(shell id -u)" "$(shell id -g)"
 
 depend:
 
@@ -457,7 +469,7 @@ uninstall-binaries:
 	done
 
 .PHONY: all binaries clean depend distclean doc install libraries test
-.PHONY: gdb gdb-test valgrind valgrindshell
+.PHONY: gdb gdb-test valgrind valgrindshell vim-gdb
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

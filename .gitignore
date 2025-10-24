@@ -12,3 +12,5 @@ pkgIndex.tcl
 design.txt
 *.js
 line_lookup.tcl
+dockerbuild
+*~

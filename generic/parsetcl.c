@@ -1,7 +1,10 @@
 #include "tclstuff.h"
+#include "tip445.h"
 #include <tdom.h>
 #include <string.h>
+#include <strings.h>
 #include <stdint.h>
+#include "obstack_pool.h"
 
 #define NS "::parsetcl"
 
@@ -52,6 +55,22 @@ struct pidata {
 };
 //}}}
 
+// Types for line index {{{
+struct encskip {
+	uint32_t	bytestart;	// From the start of the buf
+	uint32_t	adj;		// cumulative adjustment for bytes -> chars from the start of the line
+};
+struct line {
+	uint32_t		bytestart;
+	uint32_t		lineadjs;	// Number of elements in skips[]
+	struct encskip	skips[];
+};
+struct lineidx {
+	uint32_t		bytestart;
+	struct line*	line;
+};
+//}}}
+
 // Prototypes {{{
 static int subparse_script(
 		Tcl_Interp*				interp,
@@ -60,7 +79,8 @@ static int subparse_script(
 		const char* restrict	text,
 		const int				textlen,
 		const int				ofs,
-		const int				lineofs,
+		struct lineidx*			lineindex,
+		uint32_t				lines,
 		const int				incmdsubst,
 		const char** restrict	end);
 // Prototypes }}}
@@ -68,6 +88,9 @@ static int subparse_script(
 static void free_parsetree(Tcl_Obj* obj);
 static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest);
 static void update_string_rep_parsetree(Tcl_Obj* obj);
+static void free_lineidx(Tcl_Obj* obj);
+static void dup_lineidx(Tcl_Obj* src, Tcl_Obj* dest);
+static void update_string_rep_lineidx(Tcl_Obj* obj);
 
 Tcl_ObjType parsetree = {
 	"parsetree",
@@ -85,6 +108,21 @@ Tcl_ObjType astObjtype = {
 	NULL,
 };
 
+Tcl_ObjType lineidxtype = {
+	"lineidx",
+	free_lineidx,
+	dup_lineidx,
+	update_string_rep_lineidx,
+	NULL
+};
+
+struct lineidx_intrep {
+	int					refcount;
+	struct obstack*		ob;
+	struct obstack*		linestarts;
+	uint32_t			lines;
+	struct lineidx		lineidx[];
+};
 
 static void free_parsetree(Tcl_Obj* obj) //{{{
 {
@@ -162,6 +200,131 @@ static void update_string_rep_parsetree(Tcl_Obj* obj) //{{{
 	Tcl_InitStringRep(obj, Tcl_DStringValue(&res), Tcl_DStringLength(&res));
 
 	Tcl_DStringFree(&res);
+}
+
+//}}}
+static void free_lineidx(Tcl_Obj* obj) //{{{
+{
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &lineidxtype);
+
+	struct lineidx_intrep*	l = ir->twoPtrValue.ptr1;
+
+	if (--l->refcount <= 0) {
+		l->lineidx = NULL;
+
+		if (l->ob) {
+			obstack_pool_release(l->ob);
+			l->ob = NULL;
+		}
+
+		if (l->linestarts) {
+			obstack_pool_release(l->linestarts);
+			l->linestarts = NULL;
+		}
+	}
+}
+
+//}}}
+static void dup_lineidx(Tcl_Obj* src, Tcl_Obj* dest) //{{{
+{
+	Tcl_ObjInternalRep*		ir = Tcl_FetchInternalRep(src, &lineidxtype);
+	struct lineidx_intrep*	l = ir->twoPtrValue.ptr1;
+
+	l->refcount++;
+
+	Tcl_StoreInternalRep(obj, &lineidxtype, ir);
+}
+
+//}}}
+static void update_string_rep_lineidx(Tcl_Obj* obj) //{{{
+{
+	Tcl_DString				ds;
+	char					tmp[21];		// Max decimal digits in 2**64: 20 +1 for \0
+	Tcl_ObjInternalRep*		ir = Tcl_FetchInternalRep(src, &lineidxtype);
+	struct lineidx_intrep*	l = ir->twoPtrValue.ptr1;
+
+	Tcl_DStringInit(&ds);
+	for (int i=0; i<l->lines; i++) {
+		const struct line*const	line = &l->lineidx[i];
+		u64toa(line->byteoffset, tmp);
+		Tcl_DStringStartSublist(&ds);
+		Tcl_DStringAppendElement(&ds, tmp);
+		Tcl_DStringStartSublist(&ds);
+		for (int j=0; j<line->lineadjs; j++) {
+			const struct encskip*const	adj = &line->lineadjs[j];
+			u64toa(adj->bytestart, tmp); Tcl_DStringAppendElement(&ds, tmp);
+			u64toa(adj->adj, tmp);       Tcl_DStringAppendElement(&ds, tmp);
+		}
+		Tcl_DStringEndSublist(&ds);
+		Tcl_DStringEndSublist(&ds);
+	}
+
+	Tcl_InitStringRep(obj, Tcl_DStringValue(&ds), Tcl_DStringLength(&ds));
+
+	Tcl_DStringFree(&ds);
+}
+
+//}}}
+
+static Tcl_Obj* NewLineIdxObj(const char* str) //{{{
+{
+	ob = obstack_pool_get(OBSTACK_POOL_SMALL);
+	linestarts = obstack_pool_get(OBSTACK_POOL_SMALL);
+	const uint8_t*		p = script;
+	uint32_t			adj = 0;
+	uint32_t			linestart = 0;
+	uint32_t			lines = 0;
+	uint32_t			lineadjs = 0;
+
+nextchar:
+	{
+		const uint8_t	c = *p;
+
+		switch (c) {
+			case '\n':
+				{
+					struct line*const	line_final = obstack_finish(ob);
+					line_final->bytestart	= linestart;
+					line_final->lineadjs	= lineadjs;
+					obstack_grow(linestarts, &(struct line_idx){linestart, line_final}, sizeof(struct line_idx));
+					lines++;
+					lineadjs = 0;
+					adj = 0;
+					p++;
+					linestart = p-start;
+					obstack_blank(ob, sizeof(struct line));
+					goto nextchar;
+				}
+
+			case 0x00:
+			case 0x05:	// EOF
+				if (p > linestart) {
+					struct line*const	line_final = obstack_finish(ob);
+					line_final->bytestart	= linestart;
+					line_final->lineadjs	= lineadjs;
+					obstack_grow(linestarts, &(struct line_idx){linestart, line_final}, sizeof(struct line_idx));
+					lines++;
+				}
+				goto eof;
+
+			case 0x80..0xff:
+				{
+					const uint8_t	enclen = __builtin_clz(~(c<<((sizeof(int)-1)*8)));
+					adj += enclen - 1;
+					p += enclen;
+					obstack_grow(ob, &(struct encskip){p-script, adj}, sizeof(struct encskip));
+					lineadjs++;
+					goto nextchar;
+				}
+
+			default:
+				p++;
+				goto nextchar;
+		}
+	}
+eof:
+	struct lineidx*const	lineindex[] = obstack_finish(linestarts);
+	//>>>
 }
 
 //}}}
@@ -463,7 +626,8 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 							subtokens[t].start+1,
 							subtokens[t].size-1,
 							subtokens[t].start+1 - text + ofs,
-							lineofs,
+							lineindex,
+							lines,
 							1,
 							NULL);
 
@@ -575,7 +739,8 @@ static int subparse_script( //{{{
 		const char* restrict	text,
 		const int				textlen,
 		const int				ofs,
-		const int				lineofs,
+		struct lineidx*			lineindex,
+		uint32_t				lines;
 		const int				incmdsubst,
 		const char** restrict	end)
 {
@@ -1405,7 +1570,8 @@ static int subparse_subst( //{{{
 							text+i,
 							textlen-i,
 							ofs+i,
-							lineofs,
+							lineindex,
+							lines,
 							1,
 							&end);
 
@@ -1765,6 +1931,41 @@ finally:
 }
 
 //}}}
+static void byte2line(struct lineidx*const lineindex, uint32_t lines, const uint32_t byteofs, uint32_t* linePtr uint32_t* cPtr) //{{{
+{
+	uint32_t	range_top = 0;
+	uint32_t	range_bot = lines;
+	uint32_t	line;
+	uint32_t	adj_i;
+
+	while (range_bot - range_top) {
+		line = range_top + ((range_bot-range_top)>>1);
+		if (byteofs < lineindex[line].bytestart) {
+			range_bot = line;
+		} else {
+			range_top = line;
+		}
+	}
+
+	range_top = 0;
+	range_bot = lineindex[line].line->lineadjs;
+	const uint32_t			linestart = lineindex[line].bytestart;
+	struct encskip*const	lineadjs  = lineindex[line].line->skips;
+
+	while (range_bot - range_top) {
+		adj_i = range_top + ((range_bot-range_top)>>1);
+		if (byteofs < lineadjs[adj_i].bytestart) {
+			range_bot = adj_i;
+		} else {
+			range_top = adj_i;
+		}
+	}
+
+	*linePtr = line + 1;	// 1-based line numbers
+	*cPtr = byteofs - linestart - lineadjs[adj_i].adj + 1;	// 1-based character numbers
+}
+
+//}}}
 static int parse_tcl_script(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* script, domDocument** res, const int full) //{{{
 {
 	domDocument*		doc = NULL;
@@ -1772,6 +1973,9 @@ static int parse_tcl_script(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* scrip
 	int					textlen;
 	const char*			text = NULL;
 	int					code = TCL_OK;
+	struct obstack*		ob = NULL;
+	struct obstack*		linestarts = NULL;
+	Tcl_Obj*			idxobj = NULL;
 
 	if (full) {
 		doc = domCreateDocument(NULL, "tcl");
@@ -1782,9 +1986,14 @@ static int parse_tcl_script(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* scrip
 
 	text = Tcl_GetStringFromObj(script, &textlen);
 
+	// Index the line and character offsets {{{
+	TIME("Index line and char offsets",
+	idxobj = NewLineIdxObj(script);
+	)
+	//}}}
+
 	//TIME("parse script",
-	if (TCL_OK != (code = subparse_script(interp, l, root, text, textlen, 0, 0, 0, NULL)))
-		goto finally;
+	TEST_OK_LABEL(finally, code, subparse_script(interp, l, root, text, textlen, 0, idxobj, 0, NULL));
 	//);
 
 	if (*res) domFreeDocument(*res, NULL, NULL);
@@ -1796,6 +2005,17 @@ finally:
 		domFreeDocument(doc, NULL, NULL);
 		doc = NULL;
 	}
+
+	if (linestarts) {
+		obstack_pool_release(linestarts);
+		linestarts = NULL;
+	}
+	if (ob) {
+		obstack_pool_release(ob);
+		ob = NULL;
+	}
+
+	release_tclobj(&idxobj);
 
 	return code;
 }

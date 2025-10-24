@@ -275,10 +275,14 @@ namespace eval ::parsetcl {
 			subparse subst [lindex $words end] {*}$switches
 			#>>>
 		} ::parsetcl}
-		"proc"			{cmd {
+		"proc"			{cmd { #<<<
 			#puts stderr "-> proc subcommand parse"
 			set name	[xpath $cmd {word[2]}]
-			set fqname	[resolve_name [context get_all namespace] $name]
+			try {
+				set fqname	[resolve_name [context get_all namespace] $name]
+			} on error {errmsg options} {
+				puts stderr "Could not resolve proc fqname: [dict get $options -errorinfo]"
+			}
 			#if {[domNode $name hasAttribute value]} {
 			#	puts stderr "parsing proc \"[domNode $name getAttribute value]\""
 			#} else {
@@ -287,6 +291,7 @@ namespace eval ::parsetcl {
 			subparse list [xpath $cmd {word[3]}]
 			subparse script [xpath $cmd { word[last()] }]
 			#puts stderr "<- proc subcommand parse"
+			#>>>
 		} ::parsetcl}
 		"oo::class"		{cmd { subparse script [xpath $cmd { word[last()] }]	} ::parsetcl}
 		"method"		{cmd { subparse script [xpath $cmd { word[last()] }]	} ::parsetcl}
@@ -331,6 +336,7 @@ namespace eval ::parsetcl {
 			} finally {
 				catch {rename $nextword {}}
 			}
+			#>>>
 		} ::parsetcl}
 		"namespace" {cmd { #<<<
 			set words		[xpath $cmd word]
