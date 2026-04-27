@@ -1,5 +1,9 @@
-#include "int.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <time.h>
+#include <threads.h>
+#include <obstack.h>
+#include "obstack_pool.h"
 
 struct obstack_slot {
 	struct obstack			ob;				// Must be first

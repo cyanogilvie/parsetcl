@@ -603,6 +603,60 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 </tcl>
 }
 #>>>
+test parsetree-2.1 {Script node character position} -body { #<<<
+	set script	{
+		puts "hello, ([world])"
+		list a b
+	}
+	domNode [parsetree $script] asXML
+} -cleanup {
+	unset -nocomplain script
+} -result {<tcl>
+    <script idx="0" len="39" lineofs="0" linestarts="0">
+        <space idx="0" len="3">
+		</space>
+        <command idx="3" len="24" name="puts">
+            <word idx="3" len="4" value="puts">
+                <text idx="3" len="4">puts</text>
+            </word>
+            <space idx="7" len="1"> </space>
+            <word idx="8" len="18" quoted="quote">
+                <text idx="9" len="8">hello, (</text>
+                <syntax idx="17" len="1">[</syntax>
+                <script idx="18" len="6" lineofs="17" linestarts="">
+                    <command idx="18" len="6" name="world">
+                        <word idx="18" len="5" value="world">
+                            <text idx="18" len="5">world</text>
+                        </word>
+                    </command>
+                    <end idx="23" len="1">]</end>
+                </script>
+                <text idx="24" len="1">)</text>
+            </word>
+        </command>
+        <end idx="26" len="1">
+</end>
+        <space idx="27" len="2">		</space>
+        <command idx="29" len="9" name="list">
+            <word idx="29" len="4" value="list">
+                <text idx="29" len="4">list</text>
+            </word>
+            <space idx="33" len="1"> </space>
+            <word idx="34" len="1" value="a">
+                <text idx="34" len="1">a</text>
+            </word>
+            <space idx="35" len="1"> </space>
+            <word idx="36" len="1" value="b">
+                <text idx="36" len="1">b</text>
+            </word>
+        </command>
+        <end idx="37" len="1">
+</end>
+        <space idx="38" len="1">	</space>
+    </script>
+</tcl>
+}
+#>>>
 
 
 ::tcltest::cleanupTests
