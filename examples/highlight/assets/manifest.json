@@ -1,0 +1,21 @@
+{
+	"name":				"Tcl Syntax Highlighter",
+	"short_name":		"TclHighlighter",
+	"description":		"Attempts to correctly syntax highlight Tcl scripts",
+	"start_url":		"/",
+	"display":			"standalone",
+	"theme_color":		"#e8d040",
+	"background_color":	"#202020",
+	"icons": [
+		{
+			"src":		"/image/192/icon.webp",
+			"sizes":	"192x192",
+			"type":		"image/webp"
+		},
+		{
+			"src":		"/image/512/icon.webp",
+			"sizes":	"512x512",
+			"type":		"image/webp"
+		}
+	]
+}

@@ -1,5 +1,5 @@
 [wrap-git]
-url = file:///home/cyan/git/tcl/tdom
-revision = rl_0.9.6
+url = https://github.com/RubyLane/tdom
+revision = cyan-0.9.6.4
 depth = 1
 clone-recursive = true

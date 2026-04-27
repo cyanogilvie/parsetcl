@@ -1,0 +1,69 @@
+TCL-SCRIPT[main] {
+	--default-fg: #d8d8d8;
+	--default-bg: #202020;
+	display: block;
+	background: var(--default-bg);
+	color: var(--default-fg);
+	padding: .25em;
+	tab-size: 4;
+}
+
+TCL-COMMENT			{color: #7191c1;}
+TCL-ESCAPE			{color: #ff00ff; background: rgba(255 0 255 / .2);}
+TCL-SCALAR			{color: #10c1df;}
+TCL-VAR::before,
+TCL-VAR::after		{color: #006678;}
+TCL-ARRAY-NAME		{color: #10c1df;}
+TCL-ARRAY-INDEX		{color: #a41fce;}
+TCL-ARRAY-INDEX::before,
+TCL-ARRAY-INDEX::after	{color: #cc64ed;}
+TCL-WORD[quoted="quote"]			{color: #dd6c5f;}
+TCL-WORD[quoted="quote"]::before,
+TCL-WORD[quoted="quote"]::after		{color: #b73222;}
+TCL-WORD[quoted="brace"]::before,
+TCL-WORD[quoted="brace"]::after		{color: #878787;}
+TCL-WORD[expand]::before			{color: #00b100;}
+TCL-SPACE							{color: #4a4a4a;}
+TCL-SCRIPT							{color: var(--default-fg);}
+
+TCL-WORD	{border-radius: 7px;}
+TCL-COMMAND:hover:not(:has(TCL-COMMAND:hover))>TCL-WORD {
+	background: rgba(255 255 255 / .1);
+}
+
+TCL-WORD:hover:not(:has(TCL-WORD:hover, TCL-AS:hover)) {
+	/*filter: drop-shadow(0 0 .2em rgba(255 255 128 / .9));*/
+	/*background: #525252 !important;*/
+	outline: 1px solid #a9a92d;
+	outline-offset: .2em;
+}
+
+TCL-WORD[expand]:hover:not(:has(TCL-WORD:hover, TCL-AS:hover)) {
+	/*filter: drop-shadow(0 0 .2em rgba(255 255 128 / .9));*/
+	/*background: #525252 !important;*/
+	outline-style: dashed;
+}
+
+TCL-AS:hover:not(:has(TCL-WORD>TCL-AS:hover)) {
+	outline: 1px solid #196619;
+	/* outline-offset: .25em; */
+	/*background: rgba(0 255 0 / .10);*/
+	background: black;
+}
+
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-SCALAR,
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-ARRAY,
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-ESCAPE,
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-SPACE,
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-COMMENT,
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-END,
+TCL-SCRIPT[main]:has(TCL-AS:hover) TCL-TXT {
+	filter: saturate(18%);
+}`
+TCL-AS:hover * {
+	filter: saturate(100%) !important;
+}
+TCL-AS:hover:not(:has(TCL-WORD>TCL-AS:hover)) * {
+	filter: saturate(100%) !important;
+}
+

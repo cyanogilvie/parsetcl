@@ -1,15 +1,14 @@
-#if HAVE_CONFIG_H
-#   include <config.h>
-#endif
+#include <config.h>
 
-#include "tclstuff.h"
-#include "tip445.h"
-#include <tdom.h>
 #include <string.h>
 #include <strings.h>
 #include <stdint.h>
+#include <defer.h>
+#include <tclstuff.h>
+#include <tip445.h>
+#include <tdom.h>
 #include <obstack.h>
-#include "obstack_pool.h"
+#include <obstack_pool.h>
 
 #define NS "::parsetcl"
 
@@ -327,6 +326,10 @@ nextchar:
 		switch (c) {
 			case '\n':
 				{
+					// glibc obstack.h's __PTR_ALIGN deliberately does (P) - (char*)0
+					// when sizeof(PTR_INT_TYPE) >= sizeof(void*) — UB-by-strict-C
+					// but the fast-path glibc has shipped for decades.
+					[[clang::suppress]]
 					struct line*const	line_final = obstack_finish(ob);
 					line_final->bytestart	= linestart;
 					line_final->lineadjs	= lineadjs;
@@ -344,6 +347,7 @@ nextchar:
 			case 0x00:
 			case 0x05:	// EOF
 				if (p > start + linestart) {
+					[[clang::suppress]]
 					struct line*const	line_final = obstack_finish(ob);
 					line_final->bytestart	= linestart;
 					line_final->lineadjs	= lineadjs;
@@ -369,6 +373,7 @@ nextchar:
 	}
 eof:
 	{
+		[[clang::suppress]]
 		struct lineidx*const	lineindex = obstack_finish(linestarts);
 
 		// Create the Tcl_Obj with lineidx internal rep
@@ -1149,8 +1154,7 @@ static int subparse_expr( //{{{
 		const int				textlen,
 		const int				ofs,
 		struct lineidx*			lineindex,
-		uint32_t				lines,
-		const int				incmdsubst)
+		uint32_t				lines)
 {
 	domDocument*		doc = parent->ownerDocument;
 	domNode*			exprnode = NULL;
@@ -1293,7 +1297,6 @@ static int parse_combined(Tcl_Interp* interp, struct pidata* l, const int braced
 	int				dynamic = 0;
 	int				code = TCL_OK;
 	int				i = *parent_i;
-	int				t = 0;
 	Tcl_Parse		parse;
 	Tcl_DString		value;
 
@@ -1328,7 +1331,6 @@ static int parse_combined(Tcl_Interp* interp, struct pidata* l, const int braced
 				full);
 
 		if (code != TCL_OK) goto finally;
-		t += 1 + parse.numTokens;
 	}
 
 	if (full) {
@@ -1390,8 +1392,7 @@ static int subparse_list( //{{{
 		const int				textlen,
 		const int				ofs,
 		struct lineidx*			lineindex,
-		uint32_t				lines,
-		const int				incmdsubst)
+		uint32_t				lines)
 {
 	domDocument*		doc = parent->ownerDocument;
 	domNode*			listnode = NULL;
@@ -1548,7 +1549,7 @@ static int subparse_list( //{{{
 finally:
 	if (value_used) {
 		Tcl_DStringFree(&value);
-		value_used = 0;
+		[[clang::suppress]] value_used = 0;
 	}
 
 	return code;
@@ -1564,8 +1565,7 @@ static int subparse_subst( //{{{
 		const int				textlen,
 		const int				ofs,
 		struct lineidx*			lineindex,
-		uint32_t				lines,
-		const int				incmdsubst)
+		uint32_t				lines)
 {
 	domDocument*		doc = parent->ownerDocument;
 	domNode*			substnode = NULL;
@@ -1765,7 +1765,7 @@ static int subparse_subst( //{{{
 finally:
 	if (parse_used) {
 		Tcl_FreeParse(&parse);
-		parse_used = 0;
+		[[clang::suppress]] parse_used = 0;
 	}
 
 	Tcl_DStringFree(&value);
@@ -1829,7 +1829,6 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 	doc = wordnode->ownerDocument;
 	full = strcmp(doc->documentElement->nodeName, "tcl") == 0;
 
-	node = wordnode->firstChild;
 	for (node = wordnode->firstChild; node; node = node->nextSibling) {
 		if (node->nodeType != ELEMENT_NODE) continue;
 		if (strcmp("as", node->nodeName) != 0) continue;
@@ -1913,7 +1912,6 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 					strlen(text),
 					ofs,
 					NULL,
-					0,
 					0);
 
 			if (code != TCL_OK) goto finally;
@@ -1934,7 +1932,6 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 					strlen(text),
 					ofs,
 					NULL,
-					0,
 					0);
 
 			if (code != TCL_OK) goto finally;
@@ -1981,7 +1978,6 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 						strlen(text),
 						ofs,
 						NULL,
-						0,
 						0);
 
 				if (code != TCL_OK) goto finally;
@@ -2210,7 +2206,7 @@ finally:
 }
 
 //}}}
-static void free_pidata(ClientData cdata, Tcl_Interp* interp) //{{{
+static void free_pidata(ClientData cdata, Tcl_Interp* /*interp*/) //{{{
 {
 	struct pidata*	l = cdata;
 	int				i;

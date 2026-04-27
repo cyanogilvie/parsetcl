@@ -1,0 +1,36 @@
+
+TCL-SCRIPT, TCL-SPACE, TCL-COMMENT, TCL-COMMAND, TCL-WORD, TCL-END, TCL-VAR, TCL-SCALAR, TCL-ARRAY, TCL-ARRAY-NAME, TCL-ARRAY-INDEX, TCL-LIST, TCL-QUOTED, TCL-BRACED, TCL-EXPR, TCL-OP {
+	display: inline;
+}
+
+TCL-SCRIPT {
+	white-space: pre;
+	font-family: monospace;
+}
+TCL-VAR::before			{ content: '$'; }
+TCL-VAR[braced]::before	{ content: '$\7B'; }
+TCL-VAR[braced]::after	{ content: '\7D'; }
+
+TCL-WORD[quoted="brace"]::before	{ content: '\7B'; }
+TCL-WORD[quoted="brace"]::after		{ content: '\7D'; }
+TCL-WORD[quoted="quote"]::before	{ content: '"'; }
+TCL-WORD[quoted="quote"]::after		{ content: '"'; }
+TCL-WORD[expand]::before			{ content: '{*}'; }
+
+TCL-ARRAY-INDEX::before	{ content: '('; }
+TCL-ARRAY-INDEX::after	{ content: ')'; }
+
+TCL-COMMAND>TCL-WORD:first-of-type {
+	color: #d9c009;
+}
+
+/*TCL-AS		{ display: none; }*/
+
+TCL-WORD:has(>TCL-AS) > TCL-TOKENS	{ display: none; }
+TCL-WORD > TCL-AS					{ display: inline; }
+
+TCL-SUBEXPR[parens]::before	{ content: '('; }
+TCL-SUBEXPR[parens]::after	{ content: ')'; }
+TCL-SUBEXPR>TCL-SCRIPT::before,
+TCL-TOKENS>TCL-SCRIPT::before	{ content: '['; }
+

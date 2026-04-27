@@ -1,0 +1,649 @@
+% @PACKAGE_NAME@(n) @PACKAGE_VERSION@ | Tcl Source Parser
+% Cyan Ogilvie
+% @PACKAGE_VERSION@
+
+
+# NAME
+
+@PACKAGE_NAME@ - Parse Tcl source into a tDOM tree
+
+
+## SYNOPSIS
+
+**package require @PACKAGE_NAME@** ?@PACKAGE_VERSION@?
+
+**parsetcl** **parsetree** *script*\
+**parsetcl** **ast** *script*\
+**parsetcl** **subparse** *mode* *wordNode* ?*arg* ...?
+
+**parsetcl::parse** *mode* *text* ?*ofs*? ?*ofsLine*?\
+**parsetcl::xpath** *node* *xpath*\
+**parsetcl::expr2stack** *exprTokens*
+
+### Note
+The package namespace is registered as an ensemble (with **-prefixes no**),
+so the **parsetree**, **ast** and **subparse** subcommands are also
+addressable as **parsetcl::parsetree**, **parsetcl::ast** and
+**parsetcl::subparse**.  This package is in its 0 series and the API may
+change in backwards-incompatible ways - see **STABILITY** below.
+
+
+## DESCRIPTION
+
+This package parses Tcl source text - a script, an expression, a list,
+or a substitutable string - into a [tDOM](http://www.tdom.org/) tree
+representing each token, its byte offset and length in the source, and
+(for full parse trees) its line and character position.  The parsed tree
+is suitable for syntax-aware tooling: highlighters, refactorers, linters,
+formatters, indenters, code-graph builders, and any other tool that needs
+to inspect Tcl source without executing it.
+
+Two flavours of tree are produced:
+
+**parsetree** (`<tcl>` root)
+:   The full ("concrete") parse tree.  Preserves every byte of the input,
+    including whitespace, comments, syntax characters (braces, quotes,
+    brackets, dollars, backslashes), command terminators, and the `{*}`
+    expansion marker.  Each script node carries a **linestarts** index
+    so that any byte offset inside it can be cheaply mapped to a 1-based
+    line and character position.  Use this when you need round-trip
+    fidelity (formatters, refactorers, syntax highlighters).
+
+**ast** (`<ast>` root)
+:   A compact tree without line-tracking attributes.  Same node structure
+    as **parsetree** otherwise.  Use this when you only need to walk the
+    structural skeleton of the script.
+
+Both forms are produced by a fast C parser and cached on the script
+**Tcl\_Obj** as a custom **Tcl\_ObjType** (named `parsetree` and `ast`
+respectively).  Calling **parsetree** or **ast** a second time on the
+same unmodified script value is therefore essentially free - the cached
+tree is returned without re-parsing.
+
+The returned value is the **tDOM** node command for the document element
+- you walk and query it with the usual **domNode** / **selectNodes**
+methods, or with the **parsetcl::xpath** convenience wrapper.
+
+> **Tree ownership:** the document is owned by the script **Tcl\_Obj**'s
+> internal representation, **not** by the returned node command.  Do not
+> call **delete** on the root node, and do not retain the node command
+> past the lifetime of the script value - if the script value is freed
+> or has its string representation invalidated, the node command becomes
+> a dangling reference.
+
+A second pass, **subparse**, descends into a literal-valued **word** node
+in an existing tree and re-parses its content as a different language
+(script, expression, list, or subst), attaching the result as an **as**
+child.  This is how you parse the body of an **if** condition as an
+expression, the body of a **proc** as a script, the keys of a **switch**
+as a list, and so on.  The pass is driven from Tcl - this package does
+not know which words of which commands should be re-parsed - and the
+caller is expected to apply command-specific knowledge (for example,
+"the second word of `if` is an expression").
+
+### Performance model
+
+The C parser is the fast path.  A typical small script (a few KiB)
+parses in tens of microseconds and the result is cached on the
+**Tcl\_Obj** for free re-use.  The Tcl-level **parsetcl::parse**
+reference parser is two to three orders of magnitude slower and exists
+mainly to validate the C implementation; prefer **parsetree** and
+**ast** for any production use.
+
+
+## COMMANDS
+
+**parsetcl** **parsetree** *script*
+:   Parse *script* as a Tcl script and return the **tDOM** node command
+    for the root **&lt;tcl&gt;** element.  The tree contains an inner
+    **&lt;script&gt;** element with one **&lt;command&gt;** child per
+    command in the source, and **noise** tokens (whitespace, comments,
+    syntax characters, command terminators, `{*}` expansion markers)
+    are preserved as siblings of the **&lt;word&gt;** children.  See
+    **TREE STRUCTURE** for the complete node and attribute reference.
+
+    The result is cached as the **parsetree** **Tcl\_ObjType** on
+    *script*; subsequent calls with the same value return the cached
+    tree without re-parsing.
+
+    Throws a **PARSETCL** **PARSE** *subcode* exception if *script* is
+    not syntactically valid Tcl.  See **EXCEPTIONS** for the subcodes.
+
+**parsetcl** **ast** *script*
+:   Parse *script* and return the **tDOM** node command for the root
+    **&lt;ast&gt;** element.  Structurally identical to the tree
+    produced by **parsetree** (so the same node names, **xpath**
+    expressions and walking code work against either), but cached
+    independently as the **ast** **Tcl\_ObjType** on *script*.
+
+**parsetcl** **subparse** *mode* *wordNode* ?*arg* ...?
+:   Re-parse the literal value of *wordNode* (a **&lt;word&gt;** node
+    from a tree built by **parsetree** or **ast**) as the language
+    given by *mode* and attach the result as an **&lt;as&gt;** child of
+    *wordNode*.  *wordNode* must be a node command for a **&lt;word&gt;**
+    element that has a **value** attribute (i.e. its content was a
+    static literal at parse time); words whose value depends on
+    substitutions are silently skipped.
+
+    *mode* selects the sub-grammar:
+
+    **script**
+    :   Parse the value as a Tcl script.  Produces a **&lt;script&gt;**
+        subtree under **&lt;as&gt;**.
+
+    **expr**
+    :   Parse the value as a Tcl expression.  Produces an
+        **&lt;expr&gt;** subtree containing nested **&lt;subexpr&gt;**
+        and **&lt;operator&gt;** nodes.
+
+    **list**
+    :   Parse the value as a Tcl list.  Produces a **&lt;list&gt;**
+        subtree of **&lt;word&gt;** children separated by
+        **&lt;space&gt;** noise.
+
+    **subst**
+    :   Parse the value as the argument to a **subst** command.
+        Produces a **&lt;subst&gt;** subtree containing **&lt;text&gt;**,
+        **&lt;escape&gt;**, **&lt;var&gt;**, and **&lt;script&gt;**
+        children.  The optional switches **-nocommands**, **-novariables**
+        and **-nobackslashes** suppress the corresponding substitution
+        forms (mirroring the flags accepted by Tcl's built-in **subst**).
+
+    **sql**, **json**, **javascript**
+    :   Reserved for future extension.  Currently these store the
+        unparsed text in a corresponding **&lt;sql&gt;**,
+        **&lt;json&gt;** or **&lt;javascript&gt;** node tagged with an
+        empty **unparsed** attribute, without further analysis.
+
+    Throws a **PARSETCL** **PARSE** *subcode* exception if the embedded
+    text doesn't parse as the requested *mode*.
+
+**parsetcl::parse** *mode* *text* ?*ofs*? ?*ofsLine*?
+:   Tcl-level reference parser.  Same modes as **subparse** (excluding
+    **sql**/**json**/**javascript**), but operates directly on a string
+    rather than on a **&lt;word&gt;** node and returns the root tDOM
+    node command for the new tree (the document is created as a side
+    effect and is not cached on *text*).
+
+    *ofs* (default 0) is added to all **idx** attributes; *ofsLine*
+    (default 1) is added to all **line** attributes.  Use these when
+    parsing a fragment whose position inside a larger source is known.
+
+    This parser is **much slower** than **parsetree**/**ast** and is
+    intended for testing, bootstrapping, and as an executable
+    specification of the grammar.
+
+**parsetcl::xpath** *node* *xpath*
+:   Convenience wrapper for **\$node selectNodes \$xpath**.  Equivalent
+    to writing **domNode \$node selectNodes \$xpath**, but shorter at
+    the call site.
+
+**parsetcl::expr2stack** *exprTokens*
+:   Convert a flat JSON list of expression tokens (as produced by the
+    Tcl-level expression parser) into a postfix / RPN representation
+    using a shunting-yard algorithm.  Mainly useful as a building
+    block for expression evaluators built on top of this package.
+
+
+## TREE STRUCTURE
+
+Every tree produced by **parsetree** or **ast** consists of nested
+**tDOM** element nodes.  Element names indicate the token category;
+attributes carry source-position metadata and (where derivable at parse
+time) constant-folded values.
+
+### Top-level wrapper
+
+**&lt;tcl&gt;** (parsetree only) / **&lt;ast&gt;** (ast only)
+:   Document element.  Contains exactly one **&lt;script&gt;** child.
+
+### Structural nodes
+
+**&lt;script&gt;**
+:   A Tcl script.  Contains zero or more **&lt;command&gt;** children
+    interleaved with noise (**&lt;space&gt;**, **&lt;comment&gt;**,
+    **&lt;syntax&gt;**).  Carries **idx**, **len**, **lineofs** and
+    **linestarts** attributes (see **ATTRIBUTES** below).
+
+**&lt;command&gt;**
+:   A single Tcl command.  Contains a sequence of **&lt;word&gt;**
+    children separated by **&lt;space&gt;** noise, terminated by an
+    **&lt;end&gt;** node carrying the literal terminator
+    (`\n`, `;` or `]`) or empty for the synthetic terminator at end
+    of input.  If the first word of the command is a static literal,
+    the command node carries a **name** attribute with that literal
+    value - the cheap way to dispatch on command name without walking
+    children.
+
+**&lt;word&gt;**
+:   A single argument to a command (or list element, or function
+    argument).  Carries a **quoted** attribute (**none**, **brace**
+    or **quote**) describing how the word was delimited in the source.
+    If the word's value is a static literal (no substitutions, no
+    dynamic content), the word also carries a **value** attribute with
+    the fully-substituted constant value - this is what **subparse**
+    consumes.  An **expand** attribute is set on words prefixed with
+    `{*}`.
+
+    Children of **&lt;word&gt;** are the substitution tokens that make
+    it up: **&lt;text&gt;**, **&lt;escape&gt;**, **&lt;var&gt;**,
+    **&lt;array&gt;**, **&lt;script&gt;** (for **\[ ... \]** command
+    substitution), and **&lt;syntax&gt;** noise for the surrounding
+    quotes/braces.
+
+### Substitution tokens (children of &lt;word&gt;)
+
+**&lt;text&gt;**
+:   Plain literal text.  Element text content is the literal characters
+    from the source.
+
+**&lt;escape&gt;**
+:   A backslash escape (e.g. `\n`, `\u306f`, `\x65`, `\101`).  Element
+    text content is the source representation; the **norm** attribute
+    (when present) holds the normalized expansion.
+
+**&lt;var&gt;**
+:   A scalar variable substitution (`$foo`, `${name}`).  Carries
+    **type="scalar"** and **name** attributes.
+
+**&lt;array&gt;**
+:   An array element substitution (`$arr(idx)`).  Same structure as
+    **&lt;var&gt;** but with a child **&lt;index&gt;** node holding
+    the index expression as a sub-tree of substitution tokens; if
+    the index is a static literal the **&lt;index&gt;** node also
+    carries a **value** attribute.
+
+**&lt;script&gt;**
+:   A nested command substitution (`[ ... ]`).  Same structure as a
+    top-level script.
+
+### Expression tokens (under &lt;expr&gt;)
+
+**&lt;expr&gt;**
+:   Root of an expression sub-tree (produced by **subparse expr** or
+    **parse expr**).  Contains a single **&lt;subexpr&gt;** child.
+
+**&lt;subexpr&gt;**
+:   A sub-expression.  Carries **idx**, **len** and **orig**
+    attributes; if it evaluates to a constant at parse time it also
+    carries a **value** attribute.  Children are either further
+    **&lt;subexpr&gt;** nodes joined by **&lt;operator&gt;** nodes,
+    or substitution tokens (**&lt;text&gt;**, **&lt;var&gt;**,
+    **&lt;script&gt;**, ...) for leaf operands.
+
+**&lt;operator&gt;**
+:   A binary, unary or ternary operator.  Carries a **name** attribute
+    (`+`, `-`, `*`, `<`, `==`, `?`, ...) and contains its operand
+    sub-expressions as children.
+
+### Sub-grammar containers
+
+**&lt;list&gt;**
+:   Root of a list sub-tree (produced by **subparse list** or
+    **parse list**).  Contains **&lt;word&gt;** children separated
+    by **&lt;space&gt;** noise.
+
+**&lt;subst&gt;**
+:   Root of a subst sub-tree (produced by **subparse subst** or
+    **parse subst**).  Contains a sequence of **&lt;text&gt;**,
+    **&lt;escape&gt;**, **&lt;var&gt;** and **&lt;script&gt;**
+    children.
+
+**&lt;as&gt;**
+:   Wrapper attached as a child of **&lt;word&gt;** by **subparse**.
+    Holds one or more sub-trees representing alternative parses of
+    the same word's value (e.g. as both a script and an expression).
+    Look here when traversing a tree to find what **subparse** has
+    decided about each word.
+
+### Noise tokens
+
+These nodes are present in **parsetree** output to preserve round-trip
+fidelity but are tagged with an empty **noise** attribute so they can
+be cheaply skipped in xpath queries (e.g.
+`*[not(@noise)]`).
+
+**&lt;space&gt;**
+:   Whitespace - spaces, tabs and newlines that separate words or
+    commands.  Element text content is the literal characters.
+
+**&lt;comment&gt;**
+:   A `#`-introduced comment.  Element text content is the comment
+    line including the leading `#` and trailing newline.
+
+**&lt;syntax&gt;**
+:   A syntactic delimiter character: `{`, `}`, `"`, `[`, `]`,
+    `$`, opening/closing parens of array indices, ...
+
+**&lt;end&gt;**
+:   A command terminator (`\n`, `;`, `]`, or empty for the synthetic
+    terminator at end of input).
+
+**&lt;expand&gt;**
+:   The `{*}` word-expansion marker.
+
+
+## ATTRIBUTES
+
+**idx**
+:   Byte offset of the token's first character in the original source
+    text.  Always 0-based.  Present on every parsed node.
+
+**len**
+:   Length of the token in bytes (parsetree/ast output from the C
+    parser uses **len**).  Present on every parsed node.
+
+**length**
+:   Length in bytes (Tcl-level **parse** output uses **length**
+    instead of **len** for backwards compatibility with the original
+    Tcl reference parser).
+
+**line**, **char**
+:   1-based line number and character position of the token's first
+    character.  Set on every node by the Tcl-level **parse**
+    reference parser; on **parsetree** output computed lazily from
+    the per-script **linestarts** index when needed.
+
+**lineofs**, **linestarts**
+:   Set on **&lt;script&gt;** nodes in **parsetree** output.
+    **lineofs** is the line number of the script's first line minus 1
+    (so that adding **lineofs** to a within-script line number gives
+    the absolute line); **linestarts** is a space-separated list of
+    byte offsets at which lines begin within this script.  Together
+    they let any byte offset inside the script be mapped to an
+    absolute (line, char) pair without rescanning the source.
+
+**name**
+:   On **&lt;command&gt;**: the literal value of the first word, when
+    that word is a static literal.  On **&lt;var&gt;** and
+    **&lt;array&gt;**: the variable name.  On **&lt;operator&gt;**:
+    the operator symbol.
+
+**value**
+:   On **&lt;word&gt;**, **&lt;index&gt;** or **&lt;subexpr&gt;**:
+    the fully-resolved constant value, when the token's content is a
+    static literal (no substitutions).  Absent when the value would
+    depend on runtime substitutions.
+
+**varvalue**
+:   On **&lt;word&gt;**: the source-text form of a single-variable
+    word (e.g. `foo` or `arr(idx)`), set when the word consists of
+    exactly one variable substitution and nothing else.  Useful for
+    cheap "is this word just `\$x`?" tests.
+
+**quoted**
+:   On **&lt;word&gt;**: how the word was delimited in the source -
+    **none** (bareword), **brace** (`{...}`) or **quote** (`"..."`).
+
+**expand**
+:   On **&lt;word&gt;**: empty attribute set when the word was
+    prefixed with `{*}`.
+
+**type**
+:   On **&lt;var&gt;** / **&lt;array&gt;**: **scalar** or **array**.
+
+**noise**
+:   Empty attribute set on every **&lt;space&gt;**, **&lt;comment&gt;**,
+    **&lt;syntax&gt;**, **&lt;end&gt;** and **&lt;expand&gt;** node, so
+    that an xpath like `command/word/*[not(@noise)]` cheaply skips them.
+
+**orig**
+:   On **&lt;subexpr&gt;**: the source-text spelling of the
+    sub-expression.
+
+**unparsed**
+:   On **&lt;sql&gt;**, **&lt;json&gt;** or **&lt;javascript&gt;**:
+    empty attribute marking that the contained text has not been
+    further analysed.
+
+
+## EXCEPTIONS
+
+The C and Tcl parsers throw exceptions with **errorCode** matching
+the following patterns when input is not syntactically valid Tcl.
+The first three elements are always **PARSETCL PARSE** *subcode*; the
+remaining elements give the error position and source text.
+
+**PARSETCL** **PARSE** **MISSING_QUOTE** *idx* *text* *ofs*
+:   Reached end of input (or end of word) while inside a
+    `"..."`-quoted word without finding the closing quote.
+
+**PARSETCL** **PARSE** **MISSING_CLOSE_BRACE** *idx* *text* *ofs*
+:   Reached end of input while inside a `{...}`-quoted word, list
+    element or variable name without finding the matching `}`.
+
+**PARSETCL** **PARSE** **MISSING_END_ARRAY** *idx* *text* *ofs*
+:   Reached end of input while inside an array index `$arr(...)`
+    without finding the closing `)`.
+
+**PARSETCL** **PARSE** **MISSING_VARIABLE_CLOSE_BRACE** *idx* *text* *ofs*
+:   Reached end of input while parsing a `${name}` variable reference
+    without finding the closing `}`.
+
+**PARSETCL** **PARSE** **COMMAND_NOT_TERMINATED** *idx* *text* *ofs*
+:   Inside a `[ ... ]` command substitution, ran out of input
+    before finding the closing `]`.
+
+**PARSETCL** **PARSE** **EXTRA_CHARS_AFTER_CLOSE_QUOTE** *idx* *text* *ofs*
+:   Found non-whitespace, non-terminator characters after a closing
+    `"` of a quoted word.
+
+**PARSETCL** **PARSE** **LIST_ELEMENT_TRAILING_GARBAGE** *idx* *text* *ofs*
+:   Inside a list, a quoted or braced element was followed by
+    something other than whitespace.
+
+**PARSETCL** **PARSE** **MISSING_OPERAND** *idx* *text* *ofs*
+:   Inside an expression, an operator was followed by no operand.
+
+**PARSETCL** **PARSE** **EXPR_BAREWORD** *idx* *text* *ofs*
+:   Inside an expression, encountered an unquoted word that isn't a
+    recognised function name, boolean literal or operator.
+
+**PARSETCL** **PARSE** **EXPR_GIVEUP** *idx* *text* *ofs*
+:   Inside an expression, encountered text that doesn't match any
+    expected token form.
+
+**PARSETCL** **PARSE** **NO_VARIABLE_FOUND** *idx* *text* *ofs*
+:   Internal: the variable parser was invoked from the expression
+    parser but produced no recognisable variable token.
+
+**PARSETCL** **PARSE** **NO_SCRIPT_FOUND** *idx* *text* *ofs*
+:   Internal: the command-substitution parser was invoked from the
+    expression parser but produced no recognisable script token.
+
+**PARSETCL** **PARSE** **EMPTY_TOKEN** *idx* *text* *ofs*
+:   Internal: the expression parser refused to emit a zero-length
+    token.  Indicates a parser bug if seen.
+
+In every case, *idx* is the byte offset within *text* at which
+parsing failed, *text* is the source text being parsed, and *ofs*
+is the absolute offset of the start of *text* within the larger
+source (zero for top-level **parsetree** / **ast** calls).
+
+
+## EXAMPLES
+
+Walk every literal command name in a script:
+
+~~~tcl
+package require parsetcl
+
+set tree [parsetcl parsetree {
+    proc greet name { puts "hello, $name" }
+    greet world
+}]
+
+foreach cmd [parsetcl::xpath $tree {.//command[@name]}] {
+    puts "command at line [domNode $cmd getAttribute line]: \
+            [domNode $cmd getAttribute name]"
+}
+~~~
+
+Find every static literal string passed to **puts** (useful for
+catching accidentally-localisable user-facing text):
+
+~~~tcl
+foreach word [parsetcl::xpath [parsetcl ast $script] {
+    .//command[@name='puts']/word[last()][@value]
+}] {
+    puts "Literal puts at idx [$word @idx]: [$word @value]"
+}
+~~~
+
+Drive **subparse** to recursively analyse condition expressions and
+nested scripts inside an **if**:
+
+~~~tcl
+set tree [parsetcl parsetree $script]
+
+foreach if_cmd [parsetcl::xpath $tree {.//command[@name='if']}] {
+    set words [parsetcl::xpath $if_cmd {word[position() > 1]}]
+
+    # Second word is the condition expression
+    parsetcl subparse expr [lindex $words 0]
+
+    # Words at positions matching {body, elseif body, ..., else body}
+    # are scripts.  Walk them and subparse each.
+    set i 1
+    while {$i < [llength $words]} {
+        set w [lindex $words $i]
+        if {[domNode $w getAttribute value] eq "elseif"} {
+            parsetcl subparse expr   [lindex $words [incr i]]
+            parsetcl subparse script [lindex $words [incr i]]
+        } elseif {[domNode $w getAttribute value] eq "else"} {
+            parsetcl subparse script [lindex $words [incr i]]
+        } else {
+            parsetcl subparse script $w
+        }
+        incr i
+    }
+}
+~~~
+
+Reconstitute the source from a parsetree (round-trip fidelity check):
+
+~~~tcl
+set src   "puts \"hello, world\"\nfoo bar"
+set tree  [parsetcl parsetree $src]
+set back  [domNode $tree asText]
+expr {$src eq $back}    ;# -> 1
+~~~
+
+Map a byte offset back to a 1-based (line, char) pair using the
+**linestarts** index attached to the enclosing script:
+
+~~~tcl
+proc offset_to_line_char {tree byteOfs} {
+    set scripts [parsetcl::xpath $tree {.//script}]
+    foreach s $scripts {
+        set start [domNode $s getAttribute idx]
+        set len   [domNode $s getAttribute len]
+        if {$byteOfs >= $start && $byteOfs < $start + $len} {
+            set lineofs    [domNode $s getAttribute lineofs]
+            set linestarts [domNode $s getAttribute linestarts]
+            set line  [lsearch -sorted -increasing -bisect -integer \
+                    $linestarts $byteOfs]
+            set lstart [lindex $linestarts $line]
+            list [expr {$line + $lineofs + 1}] \
+                    [expr {$byteOfs - $lstart + 1}]
+        }
+    }
+}
+~~~
+
+
+## STABILITY
+
+This package is in its 0 series.  The set of node names, attributes
+and exception subcodes described here is expected to grow, and may be
+renamed or restructured in backwards-incompatible ways before the
+1.0 release.  In particular:
+
+- Attribute names are not guaranteed stable.  In some places the C
+  parser uses **len** while the Tcl-level **parse** parser uses
+  **length**; this inconsistency is expected to be resolved.
+- The **subparse** modes **sql**, **json** and **javascript** are
+  placeholders and currently produce only an opaque
+  **&lt;sql&gt;** / **&lt;json&gt;** / **&lt;javascript&gt;** node
+  with the unparsed source.
+- A C-level stubs API is not yet exposed.
+
+**USING THE 0 SERIES VERSIONS IN PRODUCTION CODE IS NOT RECOMMENDED.**
+
+
+## BUILDING
+
+Besides Tcl, this package requires **tDOM** (>=0.9.6.4).  Meson finds
+**tDOM** via its pkg-config file - set **PKG\_CONFIG\_PATH** to point
+meson at it (and Tcl) if they're installed in a nonstandard location.
+If pkg-config can't find it, the build falls back to building **tDOM**
+from a meson subproject.
+
+Tcl 9.0 is the primary supported target; building against Tcl 8.7 is
+also supported.  Tcl 8.6 may work via the bundled TIP-445 shim but is
+not regularly tested.
+
+### From a Release Tarball
+
+Download and extract [the release](https://github.com/cyanogilvie/@PACKAGE_NAME@/releases/download/v@PACKAGE_VERSION@/@PACKAGE_NAME@-@PACKAGE_VERSION@.tar.xz),
+then build with meson:
+
+```sh
+wget https://github.com/cyanogilvie/@PACKAGE_NAME@/releases/download/v@PACKAGE_VERSION@/@PACKAGE_NAME@-@PACKAGE_VERSION@.tar.xz
+tar xf @PACKAGE_NAME@-@PACKAGE_VERSION@.tar.xz
+cd @PACKAGE_NAME@-@PACKAGE_VERSION@
+
+meson setup builddir --buildtype=release
+meson install -C builddir
+```
+
+### From the Git Sources
+
+Fetch [the code](https://github.com/cyanogilvie/@PACKAGE_NAME@) and
+submodules recursively, then build with meson:
+
+```sh
+git clone --recurse-submodules https://github.com/cyanogilvie/@PACKAGE_NAME@
+cd @PACKAGE_NAME@
+
+meson setup builddir --buildtype=release
+meson install -C builddir
+```
+
+### Testing
+
+```sh
+meson test -C builddir
+```
+
+To run under valgrind (requires that Tcl and this package are built
+with suitable memory debugging flags:
+
+```sh
+meson test -C builddir --wrapper='valgrind --keep-debuginfo=yes --track-origins=yes --trace-children=yes'
+```
+
+
+## CONFORMING TO
+
+Aims to accept exactly the language accepted by the Tcl 9 core parser,
+including command substitution, variable substitution, backslash
+substitution, `{*}` word expansion, line continuation and the
+canonical list / expression / subst sub-grammars.
+
+
+## BUGS
+
+Please report any bugs to the github issue tracker:
+https://github.com/cyanogilvie/@PACKAGE_NAME@/issues
+
+
+## SEE ALSO
+
+**tDOM**, the **Tcl** language reference manual.
+
+
+## LICENSE
+
+This package is Copyright 2020-2026 Cyan Ogilvie, and is made available
+under the same license terms as the Tcl Core.

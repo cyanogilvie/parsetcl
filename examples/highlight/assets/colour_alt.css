@@ -1,0 +1,30 @@
+TCL-SCRIPT[main] {
+	--default-fg: #d8d8d8;
+	--default-bg: #202020;
+	display: block;
+	background: var(--default-bg);
+	color: var(--default-fg);
+	padding: .25em;
+	tab-size: 4;
+}
+
+TCL-COMMENT			{color: #7191c1;}
+TCL-ESCAPE			{color: #ff00ff; background: rgba(255 0 255 / .2);}
+TCL-SCALAR			{color: #10c1df;}
+TCL-VAR::before,
+TCL-VAR::after		{color: #006678;}
+TCL-ARRAY-NAME		{color: #10c1df;}
+TCL-ARRAY-INDEX		{color: #a41fce;}
+TCL-ARRAY-INDEX::before,
+TCL-ARRAY-INDEX::after	{color: #cc64ed;}
+TCL-WORD[quoted="quote"]			{color: #dd6c5f;}
+TCL-WORD[quoted="quote"]::before,
+TCL-WORD[quoted="quote"]::after		{color: #b73222;}
+TCL-WORD[quoted="brace"]::before,
+TCL-WORD[quoted="brace"]::after		{color: #878787;}
+TCL-WORD[expand]::before			{color: #00b100;}
+TCL-SPACE							{color: #4a4a4a;}
+TCL-SCRIPT							{color: var(--default-fg);}
+
+TCL-WORD	{border-radius: 7px;}
+

@@ -20,7 +20,7 @@ struct obstack_pool {
 
 thread_local struct obstack_pool	t_obstack = {0};
 
-uint64_t nanoseconds() // Time in nanoseconds, not necessarily monotonic or good for performance measurement (may drift)
+uint64_t nanoseconds(void) // Time in nanoseconds, not necessarily monotonic or good for performance measurement (may drift)
 {
 	struct timespec	ts;
 	timespec_get(&ts, TIME_UTC);
@@ -51,6 +51,10 @@ struct obstack* obstack_pool_get(enum obstack_pool_estimate est) //<<<
 		default:
 			obstack_begin(&slot->ob, 12288-32);
 	}
+	// glibc obstack.h's __PTR_ALIGN deliberately does (P) - (char*)0 when
+	// sizeof(PTR_INT_TYPE) >= sizeof(void*) — UB-by-strict-C but the
+	// fast-path glibc has shipped for decades. Silence the analyzer.
+	[[clang::suppress]]
 	slot->first_object = obstack_alloc(&slot->ob, 1);	// Record the first obstack allocation so we can release it when the obstack is returned
 
 	return (struct obstack*)slot;
@@ -63,6 +67,7 @@ void obstack_pool_release(struct obstack* ob) //<<<
 	const uint64_t			now = nanoseconds();
 
 	obstack_free(&slot->ob, slot->first_object);
+	[[clang::suppress]]
 	slot->first_object = obstack_alloc(&slot->ob, 1);
 
 	slot->next = t_obstack.free;
@@ -112,7 +117,7 @@ void obstack_pool_groom(uint64_t now) //<<<
 }
 
 //>>>
-void obstack_pool_shutdown() //<<<
+void obstack_pool_shutdown(void) //<<<
 {
 	struct obstack_slot*	s = t_obstack.free;
 

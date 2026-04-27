@@ -71,7 +71,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 } -cleanup {
 	unset -nocomplain script
 } -result {<tcl>
-    <script idx="0" len="1350" lineofs="0" linestarts="0 30 31 51 197 205 215 221 229 240 249 272 313 357 383 406 431 461 493 525 566 715 850 851 871 894 951 986 1008">
+    <script idx="0" len="1309" lineofs="0" linestarts="0 30 31 51 197 205 215 221 229 240 249 272 313 357 383 406 431 461 493 525 566 715 850 851 871 894 951 986 1008">
         <space idx="0" len="3">
 		</space>
         <comment idx="3" len="49"># This is the first comment
@@ -79,94 +79,96 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 		# this is another
 </comment>
         <space idx="52" len="2">		</space>
-        <command idx="54" len="114" name="puts">
+        <command idx="54" len="126" name="puts">
             <word idx="54" len="4" value="puts">
                 <text idx="54" len="4">puts</text>
             </word>
             <space idx="58" len="1"> </space>
-            <word idx="59" len="111" quoted="quote">
+            <word idx="59" len="120" quoted="quote">
                 <text idx="60" len="7">hello, </text>
-                <script idx="67" len="33" lineofs="0" linestarts="">
-                    <command idx="67" len="10" name="try">
-                        <word idx="67" len="3" value="try">
-                            <text idx="67" len="3">try</text>
+                <syntax idx="67" len="1">[</syntax>
+                <script idx="68" len="33" lineofs="16" linestarts="">
+                    <command idx="68" len="10" name="try">
+                        <word idx="68" len="3" value="try">
+                            <text idx="68" len="3">try</text>
                         </word>
-                        <space idx="70" len="1"> </space>
-                        <word idx="71" len="5" value="world">
-                            <text idx="71" len="5">world</text>
+                        <space idx="71" len="1"> </space>
+                        <word idx="72" len="5" value="world">
+                            <text idx="72" len="5">world</text>
                             <as>
-                                <script idx="71" len="5" lineofs="0" linestarts="">
-                                    <command idx="71" len="5" name="world">
-                                        <word idx="71" len="5" value="world">
-                                            <text idx="71" len="5">world</text>
+                                <script idx="72" len="5" lineofs="0" linestarts="">
+                                    <command idx="72" len="5" name="world">
+                                        <word idx="72" len="5" value="world">
+                                            <text idx="72" len="5">world</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <end idx="76" len="1">;</end>
                     </command>
-                    <space idx="77" len="1"> </space>
-                    <command idx="78" len="22" name="bar">
-                        <word idx="78" len="3" value="bar">
-                            <text idx="78" len="3">bar</text>
+                    <end idx="77" len="1">;</end>
+                    <space idx="78" len="1"> </space>
+                    <command idx="79" len="22" name="bar">
+                        <word idx="79" len="3" value="bar">
+                            <text idx="79" len="3">bar</text>
                         </word>
-                        <space idx="81" len="5"> {*}{</space>
-                        <word idx="86" len="5" value="first">
-                            <text idx="86" len="5">first</text>
+                        <space idx="82" len="5"> {*}{</space>
+                        <word idx="87" len="5" value="first">
+                            <text idx="87" len="5">first</text>
                         </word>
-                        <space idx="91" len="1"> </space>
-                        <word idx="92" len="6" value="second">
-                            <text idx="92" len="6">second</text>
+                        <space idx="92" len="1"> </space>
+                        <word idx="93" len="6" value="second">
+                            <text idx="93" len="6">second</text>
                         </word>
-                        <space idx="98" len="1">}</space>
-                        <end idx="99" len="1">]</end>
                     </command>
+                    <space idx="99" len="1">}</space>
+                    <end idx="100" len="1">]</end>
                 </script>
-                <text idx="110" len="1"> </text>
-                <script idx="102" len="44" lineofs="0" linestarts="">
-                    <command idx="102" len="44" name="concat">
-                        <word idx="102" len="6" value="concat">
-                            <text idx="102" len="6">concat</text>
+                <text idx="101" len="1"> </text>
+                <syntax idx="102" len="1">[</syntax>
+                <script idx="103" len="44" lineofs="51" linestarts="">
+                    <command idx="103" len="44" name="concat">
+                        <word idx="103" len="6" value="concat">
+                            <text idx="103" len="6">concat</text>
                         </word>
-                        <space idx="105" len="1"> </space>
-                        <word idx="150" len="36" expand="" quoted="quote">
-                            <var type="scalar" idx="170" len="10" name="scalarvar">
-                                <text idx="108" len="9">scalarvar</text>
+                        <space idx="109" len="1"> </space>
+                        <word idx="110" len="36" expand="" quoted="quote">
+                            <var type="scalar" idx="114" len="10" name="scalarvar">
+                                <text idx="115" len="9">scalarvar</text>
                             </var>
-                            <text idx="121" len="21"> more string contents</text>
+                            <text idx="124" len="21"> more string contents</text>
                         </word>
-                        <end idx="132" len="1">]</end>
                     </command>
+                    <end idx="146" len="1">]</end>
                 </script>
-                <text idx="142" len="1"> </text>
-                <var type="array" idx="125" len="11" name="array">
-                    <text idx="152" len="5">array</text>
-                    <text idx="182" len="3">foo</text>
+                <text idx="147" len="1"> </text>
+                <var type="array" idx="148" len="11" name="array">
+                    <text idx="149" len="5">array</text>
+                    <text idx="155" len="3">foo</text>
                 </var>
-                <text idx="103" len="1"> </text>
-                <var type="array" idx="131" len="18" name="array">
-                    <text idx="113" len="5">array</text>
-                    <text idx="143" len="1">x</text>
-                    <var type="scalar" idx="135" len="9" name="indexvar">
-                        <text idx="153" len="8">indexvar</text>
+                <text idx="159" len="1"> </text>
+                <var type="array" idx="160" len="18" name="array">
+                    <text idx="161" len="5">array</text>
+                    <text idx="167" len="1">x</text>
+                    <var type="scalar" idx="168" len="9" name="indexvar">
+                        <text idx="169" len="8">indexvar</text>
                     </var>
                 </var>
             </word>
-            <end idx="104" len="1">
-</end>
         </command>
-        <space idx="141" len="2">		</space>
-        <comment idx="142" len="16"># Third comment
+        <end idx="179" len="1">
+</end>
+        <space idx="180" len="2">		</space>
+        <comment idx="182" len="16"># Third comment
 </comment>
-        <space idx="150" len="2">		</space>
-        <command idx="201" len="72" name="foo">
-            <word idx="201" len="3" value="foo">
-                <text idx="201" len="3">foo</text>
+        <space idx="198" len="2">		</space>
+        <command idx="200" len="72" name="foo">
+            <word idx="200" len="3" value="foo">
+                <text idx="200" len="3">foo</text>
             </word>
-            <space idx="220" len="1"> </space>
-            <word idx="203" len="67" quoted="brace" value="&#xA;			select&#xA;				*&#xA;			from&#xA;				things&#xA;			where&#xA;				interest &gt; .5&#xA;		">
-                <text idx="230" len="65">
+            <space idx="203" len="1"> </space>
+            <word idx="204" len="67" quoted="brace" value="&#xA;			select&#xA;				*&#xA;			from&#xA;				things&#xA;			where&#xA;				interest &gt; .5&#xA;		">
+                <text idx="205" len="65">
 			select
 				*
 			from
@@ -175,109 +177,109 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 				interest &gt; .5
 		</text>
             </word>
-            <end idx="263" len="1">
+        </command>
+        <end idx="271" len="1">
 </end>
-        </command>
-        <space idx="237" len="3">
+        <space idx="272" len="3">
 		</space>
-        <command idx="283" len="17" name="puts">
-            <word idx="283" len="4" value="puts">
-                <text idx="283" len="4">puts</text>
+        <command idx="275" len="17" name="puts">
+            <word idx="275" len="4" value="puts">
+                <text idx="275" len="4">puts</text>
             </word>
-            <space idx="204" len="1"> </space>
-            <word idx="241" len="11" quoted="brace" value="foo\u306f">
-                <text idx="214" len="9">foo\u306f</text>
+            <space idx="279" len="1"> </space>
+            <word idx="280" len="11" quoted="brace" value="foo\u306f">
+                <text idx="281" len="9">foo\u306f</text>
             </word>
-            <end idx="264" len="1">
+        </command>
+        <end idx="291" len="1">
 </end>
-        </command>
-        <space idx="247" len="2">		</space>
-        <command idx="248" len="19" name="puts">
-            <word idx="248" len="4" value="puts">
-                <text idx="248" len="4">puts</text>
+        <space idx="292" len="2">		</space>
+        <command idx="294" len="19" name="puts">
+            <word idx="294" len="4" value="puts">
+                <text idx="294" len="4">puts</text>
             </word>
-            <space idx="250" len="1"> </space>
-            <word idx="205" len="11" quoted="quote" value="barは">
-                <text idx="301" len="3">bar</text>
-                <escape idx="320" len="6">\u306f</escape>
+            <space idx="298" len="1"> </space>
+            <word idx="299" len="11" quoted="quote" value="barは">
+                <text idx="300" len="3">bar</text>
+                <escape idx="303" len="6">\u306f</escape>
             </word>
-            <space idx="306" len="2">  </space>
-            <end idx="307" len="1">;</end>
         </command>
-        <space idx="370" len="3">
+        <space idx="310" len="2">  </space>
+        <end idx="312" len="1">;</end>
+        <space idx="313" len="3">
 		</space>
-        <command idx="309" len="41" name="if">
-            <word idx="309" len="2" value="if">
-                <text idx="309" len="2">if</text>
+        <command idx="316" len="41" name="if">
+            <word idx="316" len="2" value="if">
+                <text idx="316" len="2">if</text>
             </word>
-            <space idx="310" len="1"> </space>
-            <word idx="301" len="12" quoted="brace" value="6 * 7 &lt; 42">
-                <text idx="311" len="10">6 * 7 &lt; 42</text>
+            <space idx="318" len="1"> </space>
+            <word idx="319" len="12" quoted="brace" value="6 * 7 &lt; 42">
+                <text idx="320" len="10">6 * 7 &lt; 42</text>
                 <as>
-                    <expr idx="310">
-                        <subexpr idx="310" len="10">
-                            <operator idx="340" len="1" name="&lt;">
-                                <subexpr idx="310" len="5">
-                                    <operator idx="320" len="1" name="*">
-                                        <subexpr idx="310" len="1" value="6">
-                                            <text idx="310" len="1">6</text>
+                    <expr idx="320">
+                        <subexpr idx="320" len="10" orig="6 * 7 &lt; 42">
+                            <operator idx="326" len="1" name="&lt;">
+                                <subexpr idx="320" len="5" orig="6 * 7">
+                                    <operator idx="322" len="1" name="*">
+                                        <subexpr idx="320" len="1" orig="6" value="6">
+                                            <text idx="320" len="1">6</text>
                                         </subexpr>
-                                        <subexpr idx="330" len="1" value="7">
-                                            <text idx="330" len="1">7</text>
+                                        <subexpr idx="324" len="1" orig="7" value="7">
+                                            <text idx="324" len="1">7</text>
                                         </subexpr>
                                     </operator>
                                 </subexpr>
-                                <subexpr idx="350" len="2" value="42">
-                                    <text idx="350" len="2">42</text>
+                                <subexpr idx="328" len="2" orig="42" value="42">
+                                    <text idx="328" len="2">42</text>
                                 </subexpr>
                             </operator>
                         </subexpr>
                     </expr>
                 </as>
             </word>
-            <space idx="361" len="1"> </space>
-            <word idx="317" len="24" quoted="brace" value="error &quot;math is broken&quot;">
-                <text idx="371" len="22">error "math is broken"</text>
+            <space idx="331" len="1"> </space>
+            <word idx="332" len="24" quoted="brace" value="error &quot;math is broken&quot;">
+                <text idx="333" len="22">error "math is broken"</text>
                 <as>
-                    <script idx="391" len="22" lineofs="0" linestarts="">
-                        <command idx="391" len="22" name="error">
-                            <word idx="391" len="5" value="error">
-                                <text idx="391" len="5">error</text>
+                    <script idx="333" len="22" lineofs="0" linestarts="">
+                        <command idx="333" len="22" name="error">
+                            <word idx="333" len="5" value="error">
+                                <text idx="333" len="5">error</text>
                             </word>
-                            <space idx="312" len="1"> </space>
-                            <word idx="321" len="16" quoted="quote" value="math is broken">
-                                <text idx="313" len="14">math is broken</text>
+                            <space idx="338" len="1"> </space>
+                            <word idx="339" len="16" quoted="quote" value="math is broken">
+                                <text idx="340" len="14">math is broken</text>
                             </word>
                         </command>
                     </script>
                 </as>
             </word>
-            <end idx="329" len="1">
-</end>
         </command>
-        <space idx="393" len="3">
+        <end idx="356" len="1">
+</end>
+        <space idx="357" len="3">
 		</space>
-        <command idx="331" len="260" name="switch">
-            <word idx="331" len="6" value="switch">
-                <text idx="331" len="6">switch</text>
+        <command idx="360" len="211" name="switch">
+            <word idx="360" len="6" value="switch">
+                <text idx="360" len="6">switch</text>
             </word>
-            <space idx="334" len="1"> </space>
-            <word idx="343" len="6" value="-exact">
-                <text idx="343" len="6">-exact</text>
+            <space idx="366" len="1"> </space>
+            <word idx="367" len="6" value="-exact">
+                <text idx="367" len="6">-exact</text>
             </word>
             <space idx="373" len="1"> </space>
-            <word idx="338" len="2" value="--">
-                <text idx="338" len="2">--</text>
+            <word idx="374" len="2" value="--">
+                <text idx="374" len="2">--</text>
             </word>
-            <space idx="339" len="1"> </space>
-            <word idx="394" len="4">
-                <var type="scalar" idx="394" len="4" name="foo">
-                    <text idx="340" len="3">foo</text>
+            <space idx="376" len="1"> </space>
+            <word idx="377" len="4">
+                <var type="scalar" idx="377" len="4" name="foo">
+                    <text idx="378" len="3">foo</text>
                 </var>
             </word>
-            <space idx="314" len="1"> </space>
-            <word idx="342" len="145" quoted="brace" value="&#xA;			a {puts &quot;foo is a&quot;}&#xA;			b &quot;puts \&quot;foo is b\&quot;&quot;&#xA;			c\u306fe {puts &quot;foo is c&quot;}&#xA;			&quot;d\u306fe&quot; {puts &quot;foo is d&quot;}&#xA;			{e\u306fe} {puts &quot;foo is e&quot;}&#xA;			default {puts &quot;foo is unanticipated&quot;}&#xA;		">
-                <text idx="324" len="144">
+            <space idx="381" len="1"> </space>
+            <word idx="382" len="188" quoted="brace" value="&#xA;			a {puts &quot;foo is a&quot;}&#xA;			b &quot;puts \&quot;foo is b\&quot;&quot;&#xA;			c\u306fe {puts &quot;foo is c&quot;}&#xA;			&quot;d\u306fe&quot; {puts &quot;foo is d&quot;}&#xA;			{e\u306fe} {puts &quot;foo is e&quot;}&#xA;			default {puts &quot;foo is unanticipated&quot;}&#xA;		">
+                <text idx="383" len="186">
 			a {puts "foo is a"}
 			b "puts \"foo is b\""
 			c\u306fe {puts "foo is c"}
@@ -286,192 +288,194 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 			default {puts "foo is unanticipated"}
 		</text>
                 <as>
-                    <list idx="322">
-                        <space idx="322" len="4">
+                    <list idx="383">
+                        <space idx="383" len="4">
 			</space>
-                        <word idx="324" len="1" value="a">
-                            <text idx="324" len="1">a</text>
+                        <word idx="387" len="1" value="a">
+                            <text idx="387" len="1">a</text>
                         </word>
-                        <space idx="342" len="1"> </space>
-                        <word quoted="brace" idx="352" len="17" value="puts &quot;foo is a&quot;">
-                            <syntax idx="325" len="1">{</syntax>
-                            <text idx="352" len="15">puts "foo is a"</text>
-                            <syntax idx="333" len="1">}</syntax>
+                        <space idx="388" len="1"> </space>
+                        <word quoted="brace" idx="389" len="17" value="puts &quot;foo is a&quot;">
+                            <syntax idx="389" len="1">{</syntax>
+                            <text idx="390" len="15">puts "foo is a"</text>
+                            <syntax idx="405" len="1">}</syntax>
                             <as>
-                                <script idx="327" len="15" lineofs="0" linestarts="">
-                                    <command idx="327" len="15" name="puts">
-                                        <word idx="327" len="4" value="puts">
-                                            <text idx="327" len="4">puts</text>
+                                <script idx="390" len="15" lineofs="0" linestarts="">
+                                    <command idx="390" len="15" name="puts">
+                                        <word idx="390" len="4" value="puts">
+                                            <text idx="390" len="4">puts</text>
                                         </word>
-                                        <space idx="329" len="1"> </space>
-                                        <word idx="393" len="10" quoted="quote" value="foo is a">
-                                            <text idx="330" len="8">foo is a</text>
+                                        <space idx="394" len="1"> </space>
+                                        <word idx="395" len="10" quoted="quote" value="foo is a">
+                                            <text idx="396" len="8">foo is a</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <space idx="333" len="4">
+                        <space idx="406" len="4">
 			</space>
-                        <word idx="353" len="1" value="b">
-                            <text idx="353" len="1">b</text>
+                        <word idx="410" len="1" value="b">
+                            <text idx="410" len="1">b</text>
                         </word>
-                        <space idx="336" len="1"> </space>
-                        <word quoted="quote" idx="337" len="19" value="puts &quot;foo is b&quot;">
-                            <syntax idx="363" len="1">"</syntax>
-                            <text idx="337" len="5">puts </text>
-                            <escape idx="394" len="2">\"</escape>
-                            <text idx="304" len="8">foo is b</text>
-                            <escape idx="344" len="2">\"</escape>
-                            <syntax idx="354" len="1">"</syntax>
+                        <space idx="411" len="1"> </space>
+                        <word quoted="quote" idx="412" len="19" value="puts &quot;foo is b&quot;">
+                            <syntax idx="412" len="1">"</syntax>
+                            <text idx="413" len="5">puts </text>
+                            <escape idx="418" len="2">\"</escape>
+                            <text idx="420" len="8">foo is b</text>
+                            <escape idx="428" len="2">\"</escape>
+                            <syntax idx="430" len="1">"</syntax>
                             <as>
-                                <script idx="392" len="15" lineofs="0" linestarts="">
-                                    <command idx="392" len="15" name="puts">
-                                        <word idx="392" len="4" value="puts">
-                                            <text idx="392" len="4">puts</text>
+                                <script idx="413" len="15" lineofs="0" linestarts="">
+                                    <command idx="413" len="15" name="puts">
+                                        <word idx="413" len="4" value="puts">
+                                            <text idx="413" len="4">puts</text>
                                         </word>
-                                        <space idx="312" len="1"> </space>
-                                        <word idx="322" len="10" quoted="quote" value="foo is b">
-                                            <text idx="322" len="8">foo is b</text>
+                                        <space idx="417" len="1"> </space>
+                                        <word idx="418" len="10" quoted="quote" value="foo is b">
+                                            <text idx="419" len="8">foo is b</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <space idx="346" len="4">
+                        <space idx="431" len="4">
 			</space>
-                        <word idx="348" len="8" value="cは">
-                            <text idx="348" len="8">c\u306fe</text>
+                        <word idx="435" len="8" value="cは">
+                            <text idx="435" len="1">c</text>
+                            <escape idx="436" len="6">\u306f</escape>
                         </word>
-                        <space idx="402" len="1"> </space>
-                        <word quoted="brace" idx="403" len="17" value="puts &quot;foo is c&quot;">
-                            <syntax idx="420" len="1">{</syntax>
-                            <text idx="403" len="15">puts "foo is c"</text>
-                            <syntax idx="401" len="1">}</syntax>
+                        <space idx="443" len="1"> </space>
+                        <word quoted="brace" idx="444" len="17" value="puts &quot;foo is c&quot;">
+                            <syntax idx="444" len="1">{</syntax>
+                            <text idx="445" len="15">puts "foo is c"</text>
+                            <syntax idx="460" len="1">}</syntax>
                             <as>
-                                <script idx="420" len="15" lineofs="0" linestarts="">
-                                    <command idx="420" len="15" name="puts">
-                                        <word idx="420" len="4" value="puts">
-                                            <text idx="420" len="4">puts</text>
+                                <script idx="445" len="15" lineofs="0" linestarts="">
+                                    <command idx="445" len="15" name="puts">
+                                        <word idx="445" len="4" value="puts">
+                                            <text idx="445" len="4">puts</text>
                                         </word>
-                                        <space idx="440" len="1"> </space>
-                                        <word idx="405" len="10" quoted="quote" value="foo is c">
-                                            <text idx="450" len="8">foo is c</text>
+                                        <space idx="449" len="1"> </space>
+                                        <word idx="450" len="10" quoted="quote" value="foo is c">
+                                            <text idx="451" len="8">foo is c</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <space idx="411" len="4">
+                        <space idx="461" len="4">
 			</space>
-                        <word quoted="quote" idx="431" len="10" value="dはe">
-                            <syntax idx="413" len="1">"</syntax>
-                            <text idx="431" len="1">d</text>
-                            <escape idx="414" len="6">\u306f</escape>
-                            <text idx="417" len="1">e</text>
-                            <syntax idx="471" len="1">"</syntax>
+                        <word quoted="quote" idx="465" len="10" value="dはe">
+                            <syntax idx="465" len="1">"</syntax>
+                            <text idx="466" len="1">d</text>
+                            <escape idx="467" len="6">\u306f</escape>
+                            <text idx="473" len="1">e</text>
+                            <syntax idx="474" len="1">"</syntax>
                         </word>
-                        <space idx="418" len="1"> </space>
-                        <word quoted="brace" idx="419" len="17" value="puts &quot;foo is d&quot;">
-                            <syntax idx="481" len="1">{</syntax>
-                            <text idx="419" len="15">puts "foo is d"</text>
-                            <syntax idx="462" len="1">}</syntax>
+                        <space idx="475" len="1"> </space>
+                        <word quoted="brace" idx="476" len="17" value="puts &quot;foo is d&quot;">
+                            <syntax idx="476" len="1">{</syntax>
+                            <text idx="477" len="15">puts "foo is d"</text>
+                            <syntax idx="492" len="1">}</syntax>
                             <as>
-                                <script idx="401" len="15" lineofs="0" linestarts="">
-                                    <command idx="401" len="15" name="puts">
-                                        <word idx="401" len="4" value="puts">
-                                            <text idx="401" len="4">puts</text>
+                                <script idx="477" len="15" lineofs="0" linestarts="">
+                                    <command idx="477" len="15" name="puts">
+                                        <word idx="477" len="4" value="puts">
+                                            <text idx="477" len="4">puts</text>
                                         </word>
-                                        <space idx="421" len="1"> </space>
-                                        <word idx="413" len="10" quoted="quote" value="foo is d">
-                                            <text idx="431" len="8">foo is d</text>
+                                        <space idx="481" len="1"> </space>
+                                        <word idx="482" len="10" quoted="quote" value="foo is d">
+                                            <text idx="483" len="8">foo is d</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <space idx="427" len="4">
+                        <space idx="493" len="4">
 			</space>
-                        <word quoted="brace" idx="493" len="10" value="e\u306fe">
-                            <syntax idx="429" len="1">{</syntax>
-                            <text idx="493" len="8">e\u306fe</text>
-                            <syntax idx="433" len="1">}</syntax>
+                        <word quoted="brace" idx="497" len="10" value="e\u306fe">
+                            <syntax idx="497" len="1">{</syntax>
+                            <text idx="498" len="8">e\u306fe</text>
+                            <syntax idx="506" len="1">}</syntax>
                         </word>
-                        <space idx="434" len="1"> </space>
-                        <word quoted="brace" idx="435" len="17" value="puts &quot;foo is e&quot;">
-                            <syntax idx="443" len="1">{</syntax>
-                            <text idx="435" len="15">puts "foo is e"</text>
-                            <syntax idx="424" len="1">}</syntax>
+                        <space idx="507" len="1"> </space>
+                        <word quoted="brace" idx="508" len="17" value="puts &quot;foo is e&quot;">
+                            <syntax idx="508" len="1">{</syntax>
+                            <text idx="509" len="15">puts "foo is e"</text>
+                            <syntax idx="524" len="1">}</syntax>
                             <as>
-                                <script idx="481" len="15" lineofs="0" linestarts="">
-                                    <command idx="481" len="15" name="puts">
-                                        <word idx="481" len="4" value="puts">
-                                            <text idx="481" len="4">puts</text>
+                                <script idx="509" len="15" lineofs="0" linestarts="">
+                                    <command idx="509" len="15" name="puts">
+                                        <word idx="509" len="4" value="puts">
+                                            <text idx="509" len="4">puts</text>
                                         </word>
-                                        <space idx="402" len="1"> </space>
-                                        <word idx="421" len="10" quoted="quote" value="foo is e">
-                                            <text idx="412" len="8">foo is e</text>
+                                        <space idx="513" len="1"> </space>
+                                        <word idx="514" len="10" quoted="quote" value="foo is e">
+                                            <text idx="515" len="8">foo is e</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <space idx="443" len="4">
+                        <space idx="525" len="4">
 			</space>
-                        <word idx="445" len="7" value="default">
-                            <text idx="445" len="7">default</text>
+                        <word idx="529" len="7" value="default">
+                            <text idx="529" len="7">default</text>
                         </word>
-                        <space idx="484" len="1"> </space>
-                        <word quoted="brace" idx="495" len="29" value="puts &quot;foo is unanticipated&quot;">
-                            <syntax idx="449" len="1">{</syntax>
-                            <text idx="495" len="27">puts "foo is unanticipated"</text>
-                            <syntax idx="513" len="1">}</syntax>
+                        <space idx="536" len="1"> </space>
+                        <word quoted="brace" idx="537" len="29" value="puts &quot;foo is unanticipated&quot;">
+                            <syntax idx="537" len="1">{</syntax>
+                            <text idx="538" len="27">puts "foo is unanticipated"</text>
+                            <syntax idx="565" len="1">}</syntax>
                             <as>
-                                <script idx="484" len="27" lineofs="0" linestarts="">
-                                    <command idx="484" len="27" name="puts">
-                                        <word idx="484" len="4" value="puts">
-                                            <text idx="484" len="4">puts</text>
+                                <script idx="538" len="27" lineofs="0" linestarts="">
+                                    <command idx="538" len="27" name="puts">
+                                        <word idx="538" len="4" value="puts">
+                                            <text idx="538" len="4">puts</text>
                                         </word>
-                                        <space idx="405" len="1"> </space>
-                                        <word idx="501" len="22" quoted="quote" value="foo is unanticipated">
-                                            <text idx="510" len="20">foo is unanticipated</text>
+                                        <space idx="542" len="1"> </space>
+                                        <word idx="543" len="22" quoted="quote" value="foo is unanticipated">
+                                            <text idx="544" len="20">foo is unanticipated</text>
                                         </word>
                                     </command>
                                 </script>
                             </as>
                         </word>
-                        <space idx="531" len="3">
+                        <space idx="566" len="3">
 		</space>
                     </list>
                 </as>
             </word>
-            <end idx="536" len="1">
-</end>
         </command>
-        <space idx="563" len="2">		</space>
-        <comment idx="573" len="240">#switch -exact -- $foo [list  #	a {puts "foo is a"}  #	b {puts "foo is b"}  #	c {puts "foo is c"}  #	default {puts "foo is unanticipated"}  #]
+        <end idx="570" len="1">
+</end>
+        <space idx="571" len="2">		</space>
+        <comment idx="573" len="278">#switch -exact -- $foo [list  #	a {puts "foo is a"}  #	b {puts "foo is b"}  #	c {puts "foo is c"}  #	default {puts "foo is unanticipated"}  #]
 		#switch -exact -- $foo  #	a {puts "foo is a"}  #	b {puts "foo is b"}  #	c {puts "foo is c"}  #	default {puts "foo is unanticipated"}
 </comment>
-        <space idx="862" len="3">
+        <space idx="851" len="3">
 		</space>
-        <command idx="828" len="428" name="set">
-            <word idx="828" len="3" value="set">
-                <text idx="828" len="3">set</text>
+        <command idx="854" len="454" name="set">
+            <word idx="854" len="3" value="set">
+                <text idx="854" len="3">set</text>
             </word>
-            <space idx="893" len="1"> </space>
-            <word idx="830" len="4" value="sres">
-                <text idx="830" len="4">sres</text>
+            <space idx="857" len="1"> </space>
+            <word idx="858" len="4" value="sres">
+                <text idx="858" len="4">sres</text>
             </word>
-            <space idx="832" len="1">	</space>
-            <word idx="823" len="423">
-                <script idx="823" len="422" lineofs="0" linestarts="870 893 950 985 1007 1043 1081 1117 1149 1184 1218 1256 1301">
-                    <command idx="823" len="422" name="subst">
-                        <word idx="823" len="5" value="subst">
-                            <text idx="823" len="5">subst</text>
+            <space idx="862" len="1">	</space>
+            <word idx="863" len="444">
+                <syntax idx="863" len="1">[</syntax>
+                <script idx="864" len="443" lineofs="12" linestarts="871 894 951 986 1008 1044 1082 1118 1150 1185 1219 1257 1302">
+                    <command idx="864" len="443" name="subst">
+                        <word idx="864" len="5" value="subst">
+                            <text idx="864" len="5">subst</text>
                         </word>
-                        <space idx="835" len="1"> </space>
-                        <word idx="853" len="419" quoted="brace" value="&#xA;			This is a var: $foo&#xA;			This is an array: $bar(baz,[cmdx; set x [cmdy asdf]])&#xA;			This is a command: [sfoo; sbar]&#xA;			These are escapes:&#xA;				\\u: -&gt;\u306f&lt;- (should be は)&#xA;				\\n: -&gt;\n&lt;- (should be a newline)&#xA;				\\x: -&gt;\x6565&lt;- (should be e65)&#xA;				\\o: -&gt;\101&lt;- (should be A)&#xA;				line continuation: foo-&gt; &lt;-bar&#xA;				literal: -&gt;\&quot;&lt;- (should be &quot;)&#xA;				lit u:	-&gt;\uXXX&lt;- (should be uXXX)&#xA;				literal: -&gt;\[&lt;- (should be open bracket)&#xA;		">
-                            <text idx="836" len="418">
+                        <space idx="869" len="1"> </space>
+                        <word idx="870" len="436" quoted="brace" value="&#xA;			This is a var: $foo&#xA;			This is an array: $bar(baz,[cmdx; set x [cmdy asdf]])&#xA;			This is a command: [sfoo; sbar]&#xA;			These are escapes:&#xA;				\\u: -&gt;\u306f&lt;- (should be は)&#xA;				\\n: -&gt;\n&lt;- (should be a newline)&#xA;				\\x: -&gt;\x6565&lt;- (should be e65)&#xA;				\\o: -&gt;\101&lt;- (should be A)&#xA;				line continuation: foo-&gt; &lt;-bar&#xA;				literal: -&gt;\&quot;&lt;- (should be &quot;)&#xA;				lit u:	-&gt;\uXXX&lt;- (should be uXXX)&#xA;				literal: -&gt;\[&lt;- (should be open bracket)&#xA;		">
+                            <text idx="871" len="434">
 			This is a var: $foo
 			This is an array: $bar(baz,[cmdx; set x [cmdy asdf]])
 			This is a command: [sfoo; sbar]
@@ -486,114 +490,116 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 				literal: -&gt;\[&lt;- (should be open bracket)
 		</text>
                             <as>
-                                <subst idx="872">
-                                    <text idx="872" len="19">
+                                <subst idx="871">
+                                    <text idx="871" len="19">
 			This is a var: </text>
-                                    <var type="scalar" idx="837" len="4" name="foo">
-                                        <text idx="873" len="3">foo</text>
+                                    <var type="scalar" idx="890" len="4" name="foo">
+                                        <text idx="891" len="3">foo</text>
                                     </var>
-                                    <text idx="839" len="22">
+                                    <text idx="894" len="22">
 			This is an array: </text>
-                                    <var type="array" idx="850" len="35" name="bar">
-                                        <text idx="805" len="3">bar</text>
-                                        <text idx="920" len="4">baz,</text>
-                                        <script idx="940" len="24" lineofs="0" linestarts="">
-                                            <command idx="940" len="5" name="cmdx">
-                                                <word idx="940" len="4" value="cmdx">
-                                                    <text idx="940" len="4">cmdx</text>
+                                    <var type="array" idx="916" len="35" name="bar">
+                                        <text idx="917" len="3">bar</text>
+                                        <text idx="921" len="4">baz,</text>
+                                        <syntax idx="925" len="1">[</syntax>
+                                        <script idx="926" len="24" lineofs="0" linestarts="">
+                                            <command idx="926" len="5" name="cmdx">
+                                                <word idx="926" len="4" value="cmdx">
+                                                    <text idx="926" len="4">cmdx</text>
                                                 </word>
-                                                <end idx="960" len="1">;</end>
                                             </command>
-                                            <space idx="907" len="1"> </space>
-                                            <command idx="970" len="18" name="set">
-                                                <word idx="970" len="3" value="set">
-                                                    <text idx="970" len="3">set</text>
+                                            <end idx="930" len="1">;</end>
+                                            <space idx="931" len="1"> </space>
+                                            <command idx="932" len="18" name="set">
+                                                <word idx="932" len="3" value="set">
+                                                    <text idx="932" len="3">set</text>
                                                 </word>
-                                                <space idx="909" len="1"> </space>
-                                                <word idx="991" len="1" value="x">
-                                                    <text idx="991" len="1">x</text>
+                                                <space idx="935" len="1"> </space>
+                                                <word idx="936" len="1" value="x">
+                                                    <text idx="936" len="1">x</text>
                                                 </word>
-                                                <space idx="910" len="1"> </space>
-                                                <word idx="901" len="11">
-                                                    <script idx="901" len="10" lineofs="0" linestarts="">
-                                                        <command idx="901" len="10" name="cmdy">
-                                                            <word idx="901" len="4" value="cmdy">
-                                                                <text idx="901" len="4">cmdy</text>
+                                                <space idx="937" len="1"> </space>
+                                                <word idx="938" len="11">
+                                                    <syntax idx="938" len="1">[</syntax>
+                                                    <script idx="939" len="10" lineofs="0" linestarts="">
+                                                        <command idx="939" len="10" name="cmdy">
+                                                            <word idx="939" len="4" value="cmdy">
+                                                                <text idx="939" len="4">cmdy</text>
                                                             </word>
-                                                            <space idx="921" len="1"> </space>
-                                                            <word idx="913" len="4" value="asdf">
-                                                                <text idx="913" len="4">asdf</text>
+                                                            <space idx="943" len="1"> </space>
+                                                            <word idx="944" len="4" value="asdf">
+                                                                <text idx="944" len="4">asdf</text>
                                                             </word>
-                                                            <end idx="915" len="1">]</end>
                                                         </command>
+                                                        <end idx="948" len="1">]</end>
                                                     </script>
                                                 </word>
-                                                <end idx="916" len="1">]</end>
                                             </command>
+                                            <end idx="949" len="1">]</end>
                                         </script>
                                     </var>
-                                    <text idx="971" len="23">
+                                    <text idx="951" len="23">
 			This is a command: </text>
-                                    <syntax idx="929" len="1">[</syntax>
-                                    <script idx="993" len="316" lineofs="0" linestarts="">
-                                        <command idx="993" len="5" name="sfoo">
-                                            <word idx="993" len="4" value="sfoo">
-                                                <text idx="993" len="4">sfoo</text>
+                                    <syntax idx="974" len="1">[</syntax>
+                                    <script idx="975" len="330" lineofs="0" linestarts="">
+                                        <command idx="975" len="5" name="sfoo">
+                                            <word idx="975" len="4" value="sfoo">
+                                                <text idx="975" len="4">sfoo</text>
                                             </word>
-                                            <end idx="913" len="1">;</end>
                                         </command>
-                                        <space idx="932" len="1"> </space>
-                                        <command idx="923" len="5" name="sbar">
-                                            <word idx="923" len="4" value="sbar">
-                                                <text idx="923" len="4">sbar</text>
+                                        <end idx="979" len="1">;</end>
+                                        <space idx="980" len="1"> </space>
+                                        <command idx="981" len="5" name="sbar">
+                                            <word idx="981" len="4" value="sbar">
+                                                <text idx="981" len="4">sbar</text>
                                             </word>
-                                            <end idx="943" len="1">]</end>
                                         </command>
+                                        <end idx="985" len="1">]</end>
                                     </script>
-                                    <text idx="935" len="27">
+                                    <text idx="986" len="27">
 			These are escapes:
 				</text>
-                                    <escape idx="984" len="2">\\</escape>
-                                    <text idx="995" len="5">u: -&gt;</text>
-                                    <escape idx="1002" len="6">\u306f</escape>
-                                    <text idx="1005" len="23">&lt;- (should be は)
+                                    <escape idx="1013" len="2">\\</escape>
+                                    <text idx="1015" len="5">u: -&gt;</text>
+                                    <escape idx="1020" len="6">\u306f</escape>
+                                    <text idx="1026" len="23">&lt;- (should be は)
 				</text>
-                                    <escape idx="1061" len="2">\\</escape>
-                                    <text idx="1071" len="5">n: -&gt;</text>
-                                    <escape idx="1020" len="2">\n</escape>
-                                    <text idx="1021" len="29">&lt;- (should be a newline)
+                                    <escape idx="1049" len="2">\\</escape>
+                                    <text idx="1051" len="5">n: -&gt;</text>
+                                    <escape idx="1056" len="2">\n</escape>
+                                    <text idx="1058" len="29">&lt;- (should be a newline)
 				</text>
-                                    <escape idx="1053" len="2">\\</escape>
-                                    <text idx="1063" len="5">x: -&gt;</text>
-                                    <escape idx="1039" len="4">\x65</escape>
-                                    <text idx="1041" len="25">65&lt;- (should be e65)
+                                    <escape idx="1087" len="2">\\</escape>
+                                    <text idx="1089" len="5">x: -&gt;</text>
+                                    <escape idx="1094" len="4">\x65</escape>
+                                    <text idx="1098" len="25">65&lt;- (should be e65)
 				</text>
-                                    <escape idx="1130" len="2">\\</escape>
-                                    <text idx="1140" len="5">o: -&gt;</text>
-                                    <escape idx="1107" len="4">\101</escape>
-                                    <text idx="1109" len="67">&lt;- (should be A)
+                                    <escape idx="1123" len="2">\\</escape>
+                                    <text idx="1125" len="5">o: -&gt;</text>
+                                    <escape idx="1130" len="4">\101</escape>
+                                    <text idx="1134" len="67">&lt;- (should be A)
 				line continuation: foo-&gt; &lt;-bar
 				literal: -&gt;</text>
-                                    <escape idx="1124" len="2">\"</escape>
-                                    <text idx="1134" len="30">&lt;- (should be ")
+                                    <escape idx="1201" len="2">\"</escape>
+                                    <text idx="1203" len="30">&lt;- (should be ")
 				lit u:	-&gt;</text>
-                                    <escape idx="1280" len="2">\u</escape>
-                                    <text idx="1291" len="38">XXX&lt;- (should be uXXX)
+                                    <escape idx="1233" len="2">\u</escape>
+                                    <text idx="1235" len="38">XXX&lt;- (should be uXXX)
 				literal: -&gt;</text>
-                                    <escape idx="1282" len="2">\[</escape>
-                                    <text idx="1293" len="30">&lt;- (should be open bracket)
+                                    <escape idx="1273" len="2">\[</escape>
+                                    <text idx="1275" len="30">&lt;- (should be open bracket)
 		</text>
                                 </subst>
                             </as>
                         </word>
-                        <end idx="1330" len="1">]</end>
                     </command>
+                    <end idx="1306" len="1">]</end>
                 </script>
             </word>
-            <end idx="1340" len="1">
-</end>
         </command>
-        <space idx="1305" len="1">	</space>
+        <end idx="1307" len="1">
+</end>
+        <space idx="1308" len="1">	</space>
     </script>
 </tcl>
 }

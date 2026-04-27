@@ -8,7 +8,6 @@ build*/
 # Meson subproject artifacts (cloned/extracted from .wrap files)
 subprojects/*/
 !subprojects/packagefiles/
-subprojects/packagecache/
 subprojects/.wraplock
 # Auto-generated wrap-redirect files for transitive subprojects (e.g. expat from tdom)
 subprojects/expat.wrap

@@ -405,13 +405,13 @@ namespace eval ::parsetcl {
 							}
 						}
 
-						if {[tok get [dom currentNode] end type] eq "end"} break
+						if {[tok get [dom fromScriptContext] end type] eq "end"} break
 
 						if {$i >= $textlen} {
 							throw [list PARSETCL PARSE COMMAND_NOT_TERMINATED $i $text $ofs] "Cannot find end of command"
 						}
 					}
-					if {[tok get [dom currentNode] end str] in {"\]" ""}} break
+					if {[tok get [dom fromScriptContext] end str] in {"\]" ""}} break
 				}
 			}
 		}
@@ -460,7 +460,7 @@ namespace eval ::parsetcl {
 					) {
 						emit_waiting TEXT
 
-						#set parent		[[dom currentNode] parent]
+						#set parent		[[dom fromScriptContext] parent]
 						#set isliteral	[get_text literal_value $parent]
 						#if {$isliteral} {
 						#	# All child tokens of this index are static literals, compile them into value= attrib
@@ -546,7 +546,7 @@ namespace eval ::parsetcl {
 		set emitted	false
 
 		emit SYNTAX -str [char++]
-		[dom currentNode] setAttribute quoted brace
+		[dom fromScriptContext] setAttribute quoted brace
 		set from	$i
 
 		while {$depth} {
@@ -593,9 +593,9 @@ namespace eval ::parsetcl {
 
 		if {$quoted} {
 			emit SYNTAX -str [char++]
-			[dom currentNode] setAttribute quoted quote
+			[dom fromScriptContext] setAttribute quoted quote
 		} else {
-			[dom currentNode] setAttribute quoted none
+			[dom fromScriptContext] setAttribute quoted none
 		}
 
 		while 1 {
@@ -644,7 +644,7 @@ namespace eval ::parsetcl {
 				switch -exact -- [string index $text $i] {
 					{} {
 						emit_waiting TEXT
-						[[dom currentNode] parentNode] appendFromScript {
+						[[dom fromScriptContext] parentNode] appendFromScript {
 							emit END
 						}
 						return
@@ -653,7 +653,7 @@ namespace eval ::parsetcl {
 					"\n" - ";" {
 						emit_waiting TEXT
 						set token	[char++]
-						[[dom currentNode] parentNode] appendFromScript {
+						[[dom fromScriptContext] parentNode] appendFromScript {
 							emit END -str $token
 						}
 						return
@@ -691,7 +691,7 @@ namespace eval ::parsetcl {
 						if {$incmdsubst && !$quoted} {
 							emit_waiting TEXT
 							set token	$c
-							[[dom currentNode] parentNode] appendFromScript {
+							[[dom fromScriptContext] parentNode] appendFromScript {
 								emit END -str $token
 							}
 							return
@@ -715,7 +715,7 @@ namespace eval ::parsetcl {
 			emit EXPAND -str "{*}"
 			incr i 3
 			set c	[string index $text $i]
-			[dom currentNode] setAttribute expand true
+			[dom fromScriptContext] setAttribute expand true
 		}
 
 		switch -exact -- $c {
@@ -724,7 +724,7 @@ namespace eval ::parsetcl {
 			"\""  {parse_combined true $incmdsubst}
 			"\]" {
 				if {$incmdsubst} {
-					[[dom currentNode] parentNode] appendFromScript {
+					[[dom fromScriptContext] parentNode] appendFromScript {
 						# Arrange for the END node to be inserted as a sibling of this word node, just after it
 						emit END -str [char++]
 					}
@@ -1141,13 +1141,13 @@ namespace eval ::parsetcl {
 		set linestarts	[list $tokstart {*}[lmap m [regexp -indices -all -inline {\n} $text] {+ [lindex $m 0] $ofs 1}]]
 		set ofsline		$a_ofsline
 
-		if {[catch {dom currentNode}]} {
+		if {[catch {dom fromScriptContext}]} {
 			set doc			[dom createDocument tcl]
 			set node		[$doc documentElement]
 			set docowned	true
 		} else {
 			set docowned	false
-			set node		[dom currentNode]
+			set node		[dom fromScriptContext]
 		}
 		try {
 			$node appendFromScript {
@@ -1165,13 +1165,13 @@ namespace eval ::parsetcl {
 											emit WORD {
 												parse_word false
 											}
-											set lastword	[[dom currentNode] selectNodes {word[last()]}]
+											set lastword	[[dom fromScriptContext] selectNodes {word[last()]}]
 											if {[$lastword selectNodes count(*)] == 0} {
 												$lastword delete
 											}
 										}
 
-										if {[tok get [dom currentNode] end type] eq "end"} break
+										if {[tok get [dom fromScriptContext] end type] eq "end"} break
 
 										if {$i >= $textlen} {
 											# Hit EOF before finding the end of this command, produce an empty, synthetic END
@@ -1181,7 +1181,7 @@ namespace eval ::parsetcl {
 									}
 
 									# If the first word of this command is a literal, store the name in the name= attrib
-									#set thiscommand	[dom currentNode]
+									#set thiscommand	[dom fromScriptContext]
 									#set isliteral	[get_text literal_value [$thiscommand selectNodes {word[1]}]]
 									#if {$isliteral} {
 									#	# All child tokens of this index are static literals, compile them into value= attrib

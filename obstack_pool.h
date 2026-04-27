@@ -13,6 +13,6 @@ enum obstack_pool_estimate {
 struct obstack* obstack_pool_get(enum obstack_pool_estimate est);
 void obstack_pool_release(struct obstack* ob);
 void obstack_pool_groom(uint64_t now);
-void obstack_pool_shutdown();
+void obstack_pool_shutdown(void);
 
 #endif
