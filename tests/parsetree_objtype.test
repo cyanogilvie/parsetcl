@@ -1,13 +1,8 @@
 package require tcltest
 namespace import ::tcltest::*
 
-try {
-	package require parsetcl
-	namespace import ::parsetcl::*
-} on error {errmsg options} {
-	puts stderr "Error loading parsetcl: [dict get $options -errorinfo]"
-	exit 1
-}
+::tcltest::loadTestedCommands
+namespace import ::parsetcl::*
 
 test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 	set script	{

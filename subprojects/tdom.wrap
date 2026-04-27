@@ -1,0 +1,5 @@
+[wrap-git]
+url = file:///home/cyan/git/tcl/tdom
+revision = rl_0.9.6
+depth = 1
+clone-recursive = true

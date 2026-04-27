@@ -1,3 +1,7 @@
+#if HAVE_CONFIG_H
+#   include <config.h>
+#endif
+
 #include "tclstuff.h"
 #include "tip445.h"
 #include <tdom.h>
@@ -23,7 +27,7 @@
 #define EMIT(type, parent, from, length) \
 	if (full && (length)>0) { \
 		domNode*	node = domNewElementNode(doc, (type)); \
-		domAppendNewTextNode(node, (from), (length), TEXT_NODE, 0); \
+		domAppendNewTextNode(node, (char*)(from), (length), TEXT_NODE, 0); \
 		if (full) { \
 			SET_INT_ATTR(node, "idx", (from)-text+ofs); \
 			SET_INT_ATTR(node, "len", (length)); \
@@ -34,7 +38,7 @@
 #define SET_VALUE_ATTRIB(node, value) \
 	do { \
 		const char*	valuestr = Tcl_DStringValue(value); \
-		const int	valuelen = Tcl_DStringLength(value); \
+		const Tcl_Size	valuelen = Tcl_DStringLength(value); \
 		domSetAttributeEx(node, "value", sizeof("value")-1, valuestr, valuelen); \
 	} while(0)
 
@@ -86,6 +90,12 @@ static int subparse_script(
 		const char** restrict	end);
 int u64toa(uint64_t value, char* restrict dst);
 static void byte2line(struct lineidx*const lineindex, uint32_t lines, const uint32_t byteofs, uint32_t* linePtr, uint32_t* cPtr);
+#ifdef USE_TDOM_STUBS
+// tdom 0.9.6.1's public headers no longer expose this — declared in
+// tdomStubLib.c only.  Provide the prototype so we can link against
+// libtdomstub.a.
+extern const char* Tdom_InitStubs(Tcl_Interp* interp, char* version, int exact);
+#endif
 // Prototypes }}}
 
 static void free_parsetree(Tcl_Obj* obj);
@@ -247,14 +257,14 @@ static void update_string_rep_lineidx(Tcl_Obj* obj) //{{{
 	struct lineidx_intrep*	l = ir->twoPtrValue.ptr1;
 
 	Tcl_DStringInit(&ds);
-	for (int i=0; i<l->lines; i++) {
+	for (uint32_t i=0; i<l->lines; i++) {
 		const struct lineidx*const	lineidx = &l->lineidx[i];
 		const struct line*const		line = lineidx->line;
 		u64toa(line->bytestart, tmp);
 		Tcl_DStringStartSublist(&ds);
 		Tcl_DStringAppendElement(&ds, tmp);
 		Tcl_DStringStartSublist(&ds);
-		for (int j=0; j<line->lineadjs; j++) {
+		for (uint32_t j=0; j<line->lineadjs; j++) {
 			const struct encskip*const	adj = &line->skips[j];
 			u64toa(adj->bytestart, tmp); Tcl_DStringAppendElement(&ds, tmp);
 			u64toa(adj->adj, tmp);       Tcl_DStringAppendElement(&ds, tmp);
@@ -297,7 +307,7 @@ static Tcl_Obj* NewLineIdxObj(Tcl_Obj* scriptObj) //{{{
 {
 	struct obstack*			ob = NULL;
 	struct obstack*			linestarts = NULL;
-	int						scriptlen;
+	Tcl_Size				scriptlen;
 	const char*				script = Tcl_GetStringFromObj(scriptObj, &scriptlen);
 	const uint8_t*			start = (const uint8_t*)script;
 	const uint8_t*			p = start;
@@ -343,19 +353,17 @@ nextchar:
 				}
 				goto eof;
 
-			case 0x80 ... 0xff:
-				{
+			default:
+				if (c >= 0x80) {
 					const uint8_t	enclen = __builtin_clz(~(c<<((sizeof(int)-1)*8)));
 					adj += enclen - 1;
 					p += enclen;
 					struct encskip skip = {p-start, adj};
 					obstack_grow(ob, &skip, sizeof(struct encskip));
 					lineadjs++;
-					goto nextchar;
+				} else {
+					p++;
 				}
-
-			default:
-				p++;
 				goto nextchar;
 		}
 	}
@@ -580,7 +588,7 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 					SET_INT_ATTR(toknode, "idx", subtokens[t].start-text+ofs);
 					SET_INT_ATTR(toknode, "len", subtokens[t].size);
 				}
-				domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
+				domAppendNewTextNode(toknode, (char*)subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
 				domAppendChild(parent, toknode);
 				if (!*dynamic)
 					Tcl_DStringAppend(value, subtokens[t].start, subtokens[t].size);
@@ -601,7 +609,7 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 				//	fprintf(stderr, "Line folding case, adjusting by %d\n", subtokens[t].size-1);
 				//	ofs -= subtokens[t].size-1;
 				//}
-				domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
+				domAppendNewTextNode(toknode, (char*)subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
 				domAppendChild(parent, toknode);
 				if (!*dynamic) {
 					if (raw) {
@@ -613,7 +621,7 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 						replace_tclobj(&raw, Tcl_NewStringObj(subtokens[t].start, subtokens[t].size));
 						replace_tclobj(&escape, Tcl_SubstObj(interp, raw, TCL_SUBST_BACKSLASHES));
 						if (escape) {
-							int len;
+							Tcl_Size len;
 							const char* bytes;
 
 							bytes = Tcl_GetStringFromObj(escape, &len);
@@ -670,7 +678,7 @@ static int append_sub_tokens(Tcl_Interp* interp, struct pidata* l, domNode* pare
 				{
 					if (full) {
 						domNode*	node = domNewElementNode(doc, "syntax");
-						domAppendNewTextNode(node, subtokens[t].start, 1, TEXT_NODE, 0);
+						domAppendNewTextNode(node, (char*)subtokens[t].start, 1, TEXT_NODE, 0);
 						SET_INT_ATTR(node, "idx", subtokens[t].start-text+ofs);
 						SET_INT_ATTR(node, "len", 1);
 						domAppendChild(parent, node);
@@ -858,7 +866,7 @@ static int subparse_script( //{{{
 		if (full)
 			for (j=0; j<parse.commandSize; j++)
 				if (base[j] == '\n')
-					if (TCL_OK != (code = Tcl_ListObjAppendElement(interp, linestarts, Tcl_NewIntObj(base-text+ofs+j))))
+					if (TCL_OK != (code = Tcl_ListObjAppendElement(interp, linestarts, Tcl_NewWideIntObj(base-text+ofs+j))))
 						goto finally;
 
 		if (parse.commentSize > 0) {
@@ -983,7 +991,7 @@ static int subparse_script( //{{{
 			 */
 			if (!dynamic) {
 				const char*	valuestr = Tcl_DStringValue(&value);
-				const int	valuelen = Tcl_DStringLength(&value);
+				const Tcl_Size	valuelen = Tcl_DStringLength(&value);
 				domSetAttributeEx(wordnode, "value", sizeof("value")-1, valuestr, valuelen);
 
 				if (word == 1) {
@@ -1111,7 +1119,7 @@ static int subparse_script( //{{{
 		*end = base;
 
 	if (full) {
-		int linestarts_len;
+		Tcl_Size	linestarts_len;
 		const char*	linestarts_str = Tcl_GetStringFromObj(linestarts, &linestarts_len);
 		uint32_t	startline = 1;
 		uint32_t	startcol  = 1;
@@ -1356,7 +1364,7 @@ static int escape_value(Tcl_Interp* interp, const char* text, const int len, Tcl
 		replace_tclobj(&raw, Tcl_NewStringObj(text, len));
 		replace_tclobj(&escape, Tcl_SubstObj(interp, raw, TCL_SUBST_BACKSLASHES));
 		if (escape) {
-			int len;
+			Tcl_Size len;
 			const char* bytes;
 
 			bytes = Tcl_GetStringFromObj(escape, &len);
@@ -1848,7 +1856,7 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 		code = get_attr(interp, wordnode, "idx",   &idx);
 		if (code != TCL_OK) goto finally;
 		sscanf(idx, "%d%n", &ofs, &scanned);
-		if (scanned < strlen(idx)) {
+		if ((size_t)scanned < strlen(idx)) {
 			Tcl_SetObjResult(interp, Tcl_ObjPrintf("Invalid idx value: \"%s\", must be an integer, scanned: %d, strlen(idx): %ld", idx, scanned, strlen(idx)));
 			code = TCL_ERROR;
 			goto finally;
@@ -1986,7 +1994,7 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 			{
 				domNode*	typenode = domNewElementNode(doc, modes[mode]);
 
-				domAppendNewTextNode(typenode, text, strlen(text), TEXT_NODE, 0);
+				domAppendNewTextNode(typenode, (char*)text, strlen(text), TEXT_NODE, 0);
 				if (full) {
 					SET_INT_ATTR(typenode, "idx", ofs);
 					SET_INT_ATTR(typenode, "len", strlen(text));
@@ -2055,7 +2063,7 @@ static int parse_tcl_script(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* scrip
 {
 	domDocument*		doc = NULL;
 	domNode*			root = NULL;
-	int					textlen;
+	Tcl_Size			textlen;
 	const char*			text = NULL;
 	int					code = TCL_OK;
 	Tcl_Obj*			idxobj = NULL;
@@ -2237,7 +2245,7 @@ DLLEXPORT int Parsetcl_Init(Tcl_Interp* interp) //{{{
 	int				i;
 
 #ifdef USE_TCL_STUBS
-	if (Tcl_InitStubs(interp, "8.6", 0) == NULL)
+	if (Tcl_InitStubs(interp, TCL_VERSION, 0) == NULL)
 		return TCL_ERROR;
 #endif // USE_TCL_STUBS
 

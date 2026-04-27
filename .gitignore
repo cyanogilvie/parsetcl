@@ -1,16 +1,19 @@
 *.swp
+*~
 tags
-Makefile
-autom4te.cache
-config.log
-config.status
-configure
-*.so
-*.o
-pkgIndex.tcl
 
+# Meson build directories
+build*/
+
+# Meson subproject artifacts (cloned/extracted from .wrap files)
+subprojects/*/
+!subprojects/packagefiles/
+subprojects/packagecache/
+subprojects/.wraplock
+# Auto-generated wrap-redirect files for transitive subprojects (e.g. expat from tdom)
+subprojects/expat.wrap
+
+# Editor / scratch
 design.txt
-*.js
 line_lookup.tcl
 dockerbuild
-*~
