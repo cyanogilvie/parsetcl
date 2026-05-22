@@ -14,10 +14,9 @@ test debug-1.1 {Ensure all the procs in the namespace parse (given all the brace
 #>>>
 test parser-1.1 {hello, world} -body { #<<<
 	set parse_tree	[parse script "puts \"hello, world\"\nfoo"]
-	#puts [$parse_tree asXML]
-	$parse_tree asXML
+	#puts [domNode [$parse_tree node] asXML]
+	domNode $parse_tree asXML
 } -cleanup {
-	if {[info exists parse_tree]} { $parse_tree delete }
 	unset -nocomplain parse_tree
 } -result {<tcl>
     <script idx="0" line="1" char="1" length="23">
@@ -44,7 +43,6 @@ test parser-1.1 {hello, world} -body { #<<<
 </tcl>
 }
 #>>>
-
 
 ::tcltest::cleanupTests
 

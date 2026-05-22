@@ -60,16 +60,18 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 				literal: ->\[<- (should be open bracket)
 		}]
 	}
-	#puts stderr "reconstituted: ([domNode [parsetree $script] asText])"
-	#puts stderr "parsetree: [domNode [parsetree $script] asXML]"
-	#puts stderr "ast: [domNode [ast $script] asXML]"
-	#puts stderr "subst value: [xpath [ast $script] {string(//as/subst/@value)}]"
-	#puts stderr "reconstitution time: [timerate {domNode [parsetree $script] asText}]"
+	set pt	[parsetree $script]
+	#set at	[ast $script]
+	#puts stderr "reconstituted: ([domNode [node $pt] asText])"
+	#puts stderr "parsetree: [domNode [node $at] asXML]"
+	#puts stderr "ast: [domNode [node $at] asXML]"
+	#puts stderr "subst value: [xpath [node $at] {string(//as/subst/@value)}]"
+	#puts stderr "reconstitution time: [timerate {domNode [node $pt] asText}]"
 	#puts stderr "parse time: [timerate {parsetree [string trim " $script"]}]"
 	#puts stderr "ast time: [timerate {ast [string trim " $script"]}]"
-	domNode [parsetree $script] asXML
+	domNode [node $pt] asXML
 } -cleanup {
-	unset -nocomplain script
+	unset -nocomplain script pt at
 } -result {<tcl>
     <script idx="0" len="1309" lineofs="0" linestarts="0 30 31 51 197 205 215 221 229 240 249 272 313 357 383 406 431 461 493 525 566 715 850 851 871 894 951 986 1008">
         <space idx="0" len="3">
@@ -295,7 +297,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             <text idx="387" len="1">a</text>
                         </word>
                         <space idx="388" len="1"> </space>
-                        <word quoted="brace" idx="389" len="17" value="puts &quot;foo is a&quot;">
+                        <word quoted="brace" value="puts &quot;foo is a&quot;" idx="389" len="17">
                             <syntax idx="389" len="1">{</syntax>
                             <text idx="390" len="15">puts "foo is a"</text>
                             <syntax idx="405" len="1">}</syntax>
@@ -319,7 +321,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             <text idx="410" len="1">b</text>
                         </word>
                         <space idx="411" len="1"> </space>
-                        <word quoted="quote" idx="412" len="19" value="puts &quot;foo is b&quot;">
+                        <word quoted="quote" value="puts &quot;foo is b&quot;" idx="412" len="19">
                             <syntax idx="412" len="1">"</syntax>
                             <text idx="413" len="5">puts </text>
                             <escape idx="418" len="2">\"</escape>
@@ -347,7 +349,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             <escape idx="436" len="6">\u306f</escape>
                         </word>
                         <space idx="443" len="1"> </space>
-                        <word quoted="brace" idx="444" len="17" value="puts &quot;foo is c&quot;">
+                        <word quoted="brace" value="puts &quot;foo is c&quot;" idx="444" len="17">
                             <syntax idx="444" len="1">{</syntax>
                             <text idx="445" len="15">puts "foo is c"</text>
                             <syntax idx="460" len="1">}</syntax>
@@ -367,7 +369,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         </word>
                         <space idx="461" len="4">
 			</space>
-                        <word quoted="quote" idx="465" len="10" value="dはe">
+                        <word quoted="quote" value="dはe" idx="465" len="10">
                             <syntax idx="465" len="1">"</syntax>
                             <text idx="466" len="1">d</text>
                             <escape idx="467" len="6">\u306f</escape>
@@ -375,7 +377,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             <syntax idx="474" len="1">"</syntax>
                         </word>
                         <space idx="475" len="1"> </space>
-                        <word quoted="brace" idx="476" len="17" value="puts &quot;foo is d&quot;">
+                        <word quoted="brace" value="puts &quot;foo is d&quot;" idx="476" len="17">
                             <syntax idx="476" len="1">{</syntax>
                             <text idx="477" len="15">puts "foo is d"</text>
                             <syntax idx="492" len="1">}</syntax>
@@ -395,13 +397,13 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         </word>
                         <space idx="493" len="4">
 			</space>
-                        <word quoted="brace" idx="497" len="10" value="e\u306fe">
+                        <word quoted="brace" value="e\u306fe" idx="497" len="10">
                             <syntax idx="497" len="1">{</syntax>
                             <text idx="498" len="8">e\u306fe</text>
                             <syntax idx="506" len="1">}</syntax>
                         </word>
                         <space idx="507" len="1"> </space>
-                        <word quoted="brace" idx="508" len="17" value="puts &quot;foo is e&quot;">
+                        <word quoted="brace" value="puts &quot;foo is e&quot;" idx="508" len="17">
                             <syntax idx="508" len="1">{</syntax>
                             <text idx="509" len="15">puts "foo is e"</text>
                             <syntax idx="524" len="1">}</syntax>
@@ -425,7 +427,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             <text idx="529" len="7">default</text>
                         </word>
                         <space idx="536" len="1"> </space>
-                        <word quoted="brace" idx="537" len="29" value="puts &quot;foo is unanticipated&quot;">
+                        <word quoted="brace" value="puts &quot;foo is unanticipated&quot;" idx="537" len="29">
                             <syntax idx="537" len="1">{</syntax>
                             <text idx="538" len="27">puts "foo is unanticipated"</text>
                             <syntax idx="565" len="1">}</syntax>
@@ -609,9 +611,10 @@ test parsetree-2.1 {Script node character position} -body { #<<<
 		puts "hello, ([world])"
 		list a b
 	}
-	domNode [parsetree $script] asXML
+	set pt	[parsetree $script]
+	domNode [node $pt] asXML
 } -cleanup {
-	unset -nocomplain script
+	unset -nocomplain script pt
 } -result {<tcl>
     <script idx="0" len="39" lineofs="0" linestarts="0">
         <space idx="0" len="3">
@@ -658,9 +661,15 @@ test parsetree-2.1 {Script node character position} -body { #<<<
 </tcl>
 }
 #>>>
-
+test parsetree-3.1 {Shimmer to string while orphaned refs remain bug} -body { #<<<
+	set script	{puts "hello, world"}
+	set pt	[parsetree $script]
+	list [string range $script 0 3] [xpath [node $pt] {string(//command[@name="puts"][1]/word[2])}]
+} -cleanup {
+	unset -nocomplain script pt
+} -result {puts {hello, world}}
+#>>>
 
 ::tcltest::cleanupTests
 
 # vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> shiftwidth=4 ts=4
-
