@@ -6,6 +6,7 @@ TCL-SCRIPT {
 	white-space: pre;
 	font-family: monospace;
 }
+/*
 TCL-VAR::before			{ content: '$'; }
 TCL-VAR[braced]::before	{ content: '$\7B'; }
 TCL-VAR[braced]::after	{ content: '\7D'; }
@@ -18,6 +19,7 @@ TCL-WORD[expand]::before			{ content: '{*}'; }
 
 TCL-ARRAY-INDEX::before	{ content: '('; }
 TCL-ARRAY-INDEX::after	{ content: ')'; }
+*/
 
 TCL-COMMAND>TCL-WORD:first-of-type {
 	color: #d9c009;
@@ -28,8 +30,10 @@ TCL-AS		{ display: none; }
 TCL-WORD:hover:has(>TCL-AS) > TCL-TOKENS	{ display: none; }
 TCL-WORD:hover > TCL-AS						{ display: inline; }
 
+/*
 TCL-SUBEXPR[parens]::before	{ content: '('; }
 TCL-SUBEXPR[parens]::after	{ content: ')'; }
 TCL-SUBEXPR>TCL-SCRIPT::before,
 TCL-TOKENS>TCL-SCRIPT::before	{ content: '['; }
+*/
 

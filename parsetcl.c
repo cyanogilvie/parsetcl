@@ -678,6 +678,7 @@ static int append_sub_tokens( //<<<
 		int					ofs,
 		bool*				dynamic,
 		Tcl_DString*		value,
+		bool*				value_transformed,	// The statically-known @value was transformed from the input characters (expanded escapes, etc)
 		int					raw,
 		struct lineidx*		lineindex,
 		uint32_t			lines,
@@ -698,9 +699,10 @@ static int append_sub_tokens( //<<<
 			case TCL_TOKEN_WORD:
 			case TCL_TOKEN_SIMPLE_WORD: //<<<
 				{
-					Tcl_DString	value;				// Shadows argument!
-					int			raw = 0;			// Shadows argument!
-					bool		dynamic = false;	// Shadows argument!
+					Tcl_DString	value;						// Shadows argument!
+					int			raw = 0;					// Shadows argument!
+					bool		dynamic = false;			// Shadows argument!
+					bool		value_transformed = false;	// Shadows argument!
 					const int	syntax_len = subtokens[t+1].start - subtokens[t].start;
 					const char	c = subtokens[t].start[expand*3];
 					domNode*	wordnode = NULL;
@@ -713,7 +715,7 @@ static int append_sub_tokens( //<<<
 					domAppendChild(parent, wordnode);
 
 					if (syntax_len) {
-						//EMIT("syntax", wordnode, token->start, syntax_len);
+						EMIT("syntax", wordnode, subtokens[t].start, syntax_len);
 						switch (c) {
 							case '"': SET_CONST_ATTR(wordnode, "quoted", "quote"); break;
 							case '{': SET_CONST_ATTR(wordnode, "quoted", "brace"); raw = 1; break;
@@ -724,26 +726,47 @@ static int append_sub_tokens( //<<<
 
 					Tcl_DStringInit(&value);
 					if (subtokens[t].numComponents) {
+						const char*const		word_end = subtokens[t].start + subtokens[t].size;
+						const int				ncomp = subtokens[t].numComponents;
+						const Tcl_Token*const	inner = &subtokens[t+1];
+
 						TEST_OK(append_sub_tokens(
 								interp,
 								l,
 								wordnode,
 								text,
-								subtokens+t+1,
-								subtokens[t].numComponents,
+								inner,
+								ncomp,
 								ofs,
 								&dynamic,
 								&value,
+								&value_transformed,
 								raw,
 								lineindex,
 								lines,
 								full));
 
-						t += 1 + subtokens[t].numComponents;
+						t += 1 + ncomp;
+
+						{
+							const Tcl_Token*	last_top = NULL;
+							int					i = 0;
+							while (i < ncomp) {
+								last_top = &inner[i];
+								i += 1 + last_top->numComponents;
+							}
+							const char*			aftertok = last_top->start + last_top->size;
+							if (word_end > aftertok)
+								EMIT("syntax", wordnode, aftertok, word_end - aftertok);
+						}
 					}
 
-					if (!dynamic) 
+					if (!dynamic) {
 						SET_VALUE_ATTRIB(wordnode, &value);
+
+						if (value_transformed)
+							SET_CONST_ATTR(wordnode, "valuetransformed", "1");
+					}
 
 					Tcl_DStringFree(&value);
 				}
@@ -799,6 +822,7 @@ static int append_sub_tokens( //<<<
 							Tcl_Size	len;
 							const char*	bytes = Tcl_GetStringFromObj(escape, &len);
 							Tcl_DStringAppend(value, bytes, len);
+							*value_transformed = true;
 						}
 					}
 				}
@@ -817,27 +841,57 @@ static int append_sub_tokens( //<<<
 						SET_UINT_ATTR(toknode, "idx", subtokens[t].start-text+ofs);
 						SET_UINT_ATTR(toknode, "len", subtokens[t].size);
 					}
-					//domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
 					domAppendChild(parent, toknode);
 
 					if (subtokens[t].numComponents) {
-						TEST_OK(append_sub_tokens(
-								interp,
-								l,
-								toknode,
-								text,
-								subtokens+t+1,
-								subtokens[t].numComponents,
-								ofs,
-								dynamic,
-								value,
-								raw,
-								lineindex,
-								lines,
-								full));
+						const char*const	vstart	= subtokens[t].start;
+						const char*const	vend	= vstart + subtokens[t].size;
+						const char*			cur		= vstart;
+						int					ci		= t + 1;
+						const int			ci_end	= ci + subtokens[t].numComponents;
 
-						domSetAttributeEx(toknode, "name", sizeof("name")-1, subtokens[t+1].start, subtokens[t+1].size);
+						// First inner subtoken is the variable name TEXT;
+						// the byte range it covers names the var.  Indexed
+						// arrays have additional subtokens for the index.
+						domSetAttributeEx(toknode, "name", sizeof("name")-1,
+								subtokens[ci].start, subtokens[ci].size);
 						// TODO: if this is an array and the index tokens are static literals, store that in the "index" attribute
+
+						while (ci < ci_end) {
+							const Tcl_Token*	sub = &subtokens[ci];
+							const int			sub_total = 1 + sub->numComponents;
+
+							// Fill the byte range between the previous subtoken
+							// (or the var's opening `$`) and this one — covers
+							// `$`, `${`, `(`, and literal index runs between
+							// substitutions.
+							if (sub->start > cur)
+								EMIT("syntax", toknode, cur, sub->start - cur);
+
+							TEST_OK(append_sub_tokens(
+									interp,
+									l,
+									toknode,
+									text,
+									sub,
+									sub_total,
+									ofs,
+									dynamic,
+									value,
+									value_transformed,
+									raw,
+									lineindex,
+									lines,
+									full));
+
+							cur = sub->start + sub->size;
+							ci += sub_total;
+						}
+
+						// Trailing gap covers `}` for `${name}` and `)` for arrays.
+						if (vend > cur)
+							EMIT("syntax", toknode, cur, vend - cur);
+
 						t += subtokens[t].numComponents;
 					}
 				}
@@ -870,27 +924,20 @@ static int append_sub_tokens( //<<<
 				//>>>
 			case TCL_TOKEN_SUB_EXPR: //<<<
 				{
-					Tcl_DString	value;				// Shadows argument!
-					bool		dynamic = false;	// Shadows argument!
+					Tcl_DString	value;					// Shadows argument!
+					bool	dynamic = false;			// Shadows argument!
+					bool	value_transformed = false;	// Shadows argument!
 
 					domNode* toknode = domNewElementNode(doc, "subexpr");
+					const char*const	sub_start = subtokens[t].start;
+					const char*const	sub_end   = sub_start + subtokens[t].size;
 					if (full) {
-						SET_UINT_ATTR(toknode, "idx", subtokens[t].start-text+ofs);
+						SET_UINT_ATTR(toknode, "idx", sub_start-text+ofs);
 						SET_UINT_ATTR(toknode, "len", subtokens[t].size);
 					}
-					//domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
-					domSetAttributeEx(toknode, "orig", sizeof("orig")-1, subtokens[t].start, subtokens[t].size);
-					/*
-					{
-						Tcl_Obj* tmp = NULL;
-
-						replace_tclobj(&tmp, Tcl_NewStringObj(subtokens[t].start, subtokens[t].size));
-						fprintf(stderr, "subexpr: ->%s<-\n", Tcl_GetString(tmp));
-						replace_tclobj(&tmp, NULL);
-					}
-					*/
+					domSetAttributeEx(toknode, "orig", sizeof("orig")-1, sub_start, subtokens[t].size);
 					if (subtokens[t].size) {
-						switch (subtokens[t].start[0]) {
+						switch (sub_start[0]) {
 							case '"': SET_CONST_ATTR(toknode, "quoted", "quote"); break;
 							case '{': SET_CONST_ATTR(toknode, "quoted", "brace"); break;
 						}
@@ -899,6 +946,31 @@ static int append_sub_tokens( //<<<
 
 					Tcl_DStringInit(&value);
 					if (subtokens[t].numComponents) {
+						// Compute the leftmost/rightmost source byte covered by any
+						// top-level inner token (operator symbol + operand subexprs).
+						// The subexpr's idx/len may extend further (when wrapped in
+						// parens), so we need leading/trailing gap fills.
+						const char*	leftmost  = NULL;
+						const char*	rightmost = NULL;
+						{
+							int ti = 1;
+							const int ti_end = 1 + subtokens[t].numComponents;
+							while (ti < ti_end) {
+								const Tcl_Token* tok = &subtokens[t+ti];
+								if (leftmost  == NULL || tok->start < leftmost)
+									leftmost = tok->start;
+								const char* end = tok->start + tok->size;
+								if (rightmost == NULL || end > rightmost)
+									rightmost = end;
+								ti += 1 + tok->numComponents;
+							}
+						}
+
+						// Leading gap (e.g., `(` wrapping the subexpr).  toknode has
+						// no children yet so an append puts this at position 0.
+						if (leftmost && leftmost > sub_start)
+							EMIT("syntax", toknode, sub_start, leftmost - sub_start);
+
 						TEST_OK(append_sub_tokens(
 								interp,
 								l,
@@ -909,15 +981,25 @@ static int append_sub_tokens( //<<<
 								ofs,
 								&dynamic,
 								&value,
+								&value_transformed,
 								0,
 								lineindex,
 								lines,
 								full));
 
+						// Trailing gap (e.g., `)` wrapping the subexpr or closing
+						// the function-call paren list).
+						if (rightmost && sub_end > rightmost)
+							EMIT("syntax", toknode, rightmost, sub_end - rightmost);
+
 						t += subtokens[t].numComponents;
 					}
-					if (!dynamic)
+					if (!dynamic) {
 						SET_VALUE_ATTRIB(toknode, &value);
+
+						if (value_transformed)
+							SET_CONST_ATTR(toknode, "valuetransformed", "1");
+					}
 
 					Tcl_DStringFree(&value);
 				}
@@ -927,15 +1009,82 @@ static int append_sub_tokens( //<<<
 				{
 					*dynamic = true;
 					domNode* toknode = domNewElementNode(doc, "operator");
+					const char*const	op_sym     = subtokens[t].start;
+					const int			op_sym_len = subtokens[t].size;
+					const char*const	op_sym_end = op_sym + op_sym_len;
 					if (full) {
-						SET_UINT_ATTR(toknode, "idx", subtokens[t].start-text+ofs);
-						SET_UINT_ATTR(toknode, "len", subtokens[t].size);
+						SET_UINT_ATTR(toknode, "idx", op_sym-text+ofs);
+						SET_UINT_ATTR(toknode, "len", op_sym_len);
 					}
-					domSetAttributeEx(toknode, "name", sizeof("name")-1, subtokens[t].start, subtokens[t].size);
-					//domAppendNewTextNode(toknode, subtokens[t].start, subtokens[t].size, TEXT_NODE, 0);
+					domSetAttributeEx(toknode, "name", sizeof("name")-1, op_sym, op_sym_len);
 					domAppendChild(parent, toknode);
 
-					if (t < numComponents-1) {
+					if (full) {
+						// Walk operand subtokens one at a time, interleaving:
+						//   - the operator's own symbol <syntax> at the right
+						//     idx-ordered position (between operands for infix,
+						//     before all operands for prefix/function call)
+						//   - <syntax> gap-fill for whitespace, parens, commas,
+						//     ternary `:`, etc. between adjacent items
+						// Operands are emitted by recursive append_sub_tokens.
+						// Zero-arity operators (e.g. `rand()`) skip the loop
+						// entirely; the trailing fallback below still emits
+						// their symbol.
+						const char*	cur = op_sym;
+						if (t < numComponents-1) {
+							const Tcl_Token*const	first_op = &subtokens[t+1];
+							if (first_op->start < cur) cur = first_op->start;
+						}
+						bool		op_emitted = false;
+
+						int oi = t + 1;
+						while (oi < numComponents) {
+							const Tcl_Token*	o = &subtokens[oi];
+
+							// Emit the operator symbol just before the first
+							// operand whose start is >= the operator's idx.
+							if (!op_emitted && o->start >= op_sym) {
+								if (op_sym > cur)
+									EMIT("syntax", toknode, cur, op_sym - cur);
+								EMIT("syntax", toknode, op_sym, op_sym_len);
+								cur = op_sym_end;
+								op_emitted = true;
+							}
+
+							if (o->start > cur)
+								EMIT("syntax", toknode, cur, o->start - cur);
+
+							const int o_total = 1 + o->numComponents;
+							TEST_OK(append_sub_tokens(
+									interp,
+									l,
+									toknode,
+									text,
+									o,
+									o_total,
+									ofs,
+									dynamic,
+									value,
+									value_transformed,
+									raw,
+									lineindex,
+									lines,
+									full));
+
+							cur = o->start + o->size;
+							oi += o_total;
+						}
+
+						// Cases where the operator's own symbol still hasn't
+						// been emitted by the operand loop: zero-arity (no
+						// operands at all) and postfix (symbol after all
+						// operands — rare in Tcl).
+						if (!op_emitted) {
+							if (op_sym > cur)
+								EMIT("syntax", toknode, cur, op_sym - cur);
+							EMIT("syntax", toknode, op_sym, op_sym_len);
+						}
+					} else if (t < numComponents-1) {
 						TEST_OK(append_sub_tokens(
 								interp,
 								l,
@@ -946,6 +1095,7 @@ static int append_sub_tokens( //<<<
 								ofs,
 								dynamic,
 								value,
+								value_transformed,
 								raw,
 								lineindex,
 								lines,
@@ -1059,7 +1209,7 @@ static int subparse_script( //<<<
 			const Tcl_Token*	token = &parse.tokenPtr[t];
 			const int			spacelen = token->start - last_wordend;
 			//const char*			wordend = token->start + token->size;
-			bool				dynamic=false, raw=false;
+			bool				dynamic=false, raw=false, value_transformed=false;
 
 			word++;
 
@@ -1104,7 +1254,7 @@ static int subparse_script( //<<<
 				const char	c = token->start[expand*3];
 
 				if (syntax_len) {
-					//EMIT("syntax", wordnode, token->start, syntax_len);
+					EMIT("syntax", wordnode, token->start, syntax_len);
 					switch (c) {
 						case '"': SET_CONST_ATTR(wordnode, "quoted", "quote"); break;
 						case '{': SET_CONST_ATTR(wordnode, "quoted", "brace"); raw = true; break;
@@ -1125,20 +1275,31 @@ static int subparse_script( //<<<
 						ofs,
 						&dynamic,
 						&value,
+						&value_transformed,
 						raw,
 						lineindex,
 						lines,
 						full));
 
 				t += 1 + token->numComponents;
-			}
 
-			/*
-			{
-				const char*	aftertok = parse.tokenPtr[t-1].start + parse.tokenPtr[t-1].size;
-				EMIT("syntax", wordnode, aftertok, wordend - aftertok);
+				{
+					// numComponents counts ALL descendants, so parse.tokenPtr[t-1]
+					// is the deepest leaf — not what we want.  Walk top-level
+					// subtokens to find the last one, whose end is the right
+					// boundary for the trailing-delimiter gap.
+					const Tcl_Token*	last_top = NULL;
+					int					i = 0;
+					while (i < token->numComponents) {
+						last_top = &token[1+i];
+						i += 1 + last_top->numComponents;
+					}
+					const char*			aftertok = last_top->start + last_top->size;
+					const char*const	word_end = token->start + token->size;
+					if (word_end > aftertok)
+						EMIT("syntax", wordnode, aftertok, word_end - aftertok);
+				}
 			}
-			*/
 
 			/*
 			 * If the word has a static literal value, loft it into
@@ -1149,6 +1310,9 @@ static int subparse_script( //<<<
 				const char*		valuestr = Tcl_DStringValue(&value);
 				const Tcl_Size	valuelen = Tcl_DStringLength(&value);
 				domSetAttributeEx(wordnode, "value", sizeof("value")-1, valuestr, valuelen);
+
+				if (value_transformed)
+					SET_CONST_ATTR(wordnode, "valuetransformed", "1");
 
 				if (word == 1) {
 					Tcl_Obj*	cmdname	= NULL;		defer { replace_tclobj(&cmdname, NULL); }
@@ -1329,6 +1493,7 @@ static int subparse_expr( //<<<
 
 		if (token->numComponents) {
 			bool	dynamic = false;
+			bool	value_transformed = false;
 			TEST_OK(append_sub_tokens(
 					interp,
 					l,
@@ -1339,6 +1504,7 @@ static int subparse_expr( //<<<
 					ofs,
 					&dynamic,
 					NULL,
+					&value_transformed,
 					0,
 					lineindex,
 					lines,
@@ -1427,6 +1593,7 @@ static int parse_combined(Tcl_Interp* interp, struct pidata* l, const bool brace
 
 	if (parse.numTokens) {
 		bool	dynamic = false;
+		bool	value_transformed = false;
 
 		TEST_OK(append_sub_tokens(
 				interp,
@@ -1438,13 +1605,18 @@ static int parse_combined(Tcl_Interp* interp, struct pidata* l, const bool brace
 				ofs,
 				&dynamic,
 				&value,
+				&value_transformed,
 				braced,
 				lineindex,
 				lines,
 				full));
 
-		if (!dynamic)
+		if (!dynamic) {
 			SET_VALUE_ATTRIB(wordnode, &value);
+
+			if (value_transformed)
+				SET_CONST_ATTR(wordnode, "valuetransformed", "1");
+		}
 	}
 
 	if (full) {
@@ -1663,6 +1835,7 @@ static int subparse_subst( //<<<
 	if (!(flags & TCL_SUBST_BACKSLASHES))	SET_CONST_ATTR(substnode, "nobackslashes",	"");
 
 	bool	dynamic = false;	// true if word contains command or variable substitutions
+	bool	value_transformed = false;
 
 	Tcl_DString	value;		// accumulates the static literal value if the word has one (!dynamic)
 	Tcl_DStringInit(&value);
@@ -1692,6 +1865,7 @@ static int subparse_subst( //<<<
 								ofs,
 								&dynamic,
 								&value,
+								&value_transformed,
 								0,
 								lineindex,
 								lines,
@@ -1825,8 +1999,12 @@ static int subparse_subst( //<<<
 		if (!dynamic) Tcl_DStringAppend(&value, tok, cur-tok);
 	}
 
-	if (!dynamic)
+	if (!dynamic) {
 		SET_VALUE_ATTRIB(substnode, &value);
+
+		if (value_transformed)
+			SET_CONST_ATTR(substnode, "valuetransformed", "1");
+	}
 
 	return TCL_OK;
 }
@@ -1888,7 +2066,30 @@ static int subparse(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj* con
 		}
 		if (asnode == NULL) {
 			asnode = domNewElementNode(doc, "as");
+			// The <as> node represents the same byte range as the raw word
+			// representation (text/var/escape/etc), so it must sit BETWEEN
+			// the opening and trailing <syntax> delimiters of the word in
+			// DOM order — otherwise consumers that drop the raw nodes (to
+			// avoid double-emitting the content) end up with <as> outside
+			// the brackets and asText produces e.g. `{}xyz` instead of
+			// `{xyz}`.  Append, then if the last child is a trailing
+			// <syntax> delimiter, splice <as> just before it.
 			domAppendChild(wordnode, asnode);
+			domNode*	tail = asnode->previousSibling;
+			if (tail && tail->nodeType == ELEMENT_NODE &&
+					strcmp(tail->nodeName, "syntax") == 0) {
+				// Manual splice — tdom's stubs interface doesn't expose
+				// domInsertBefore.  Move asnode from end to just before tail.
+				wordnode->lastChild       = tail;
+				tail->nextSibling         = NULL;
+				asnode->nextSibling       = tail;
+				asnode->previousSibling   = tail->previousSibling;
+				tail->previousSibling     = asnode;
+				if (asnode->previousSibling)
+					asnode->previousSibling->nextSibling = asnode;
+				else
+					wordnode->firstChild = asnode;
+			}
 		}
 
 		// Extract text from word <<<

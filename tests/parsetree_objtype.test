@@ -69,6 +69,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 	#puts stderr "reconstitution time: [timerate {domNode [node $pt] asText}]"
 	#puts stderr "parse time: [timerate {parsetree [string trim " $script"]}]"
 	#puts stderr "ast time: [timerate {ast [string trim " $script"]}]"
+	writeFile /tmp/ref.tcl text [domNode [node $pt] asXML]
 	domNode [node $pt] asXML
 } -cleanup {
 	unset -nocomplain script pt at
@@ -87,6 +88,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
             </word>
             <space idx="58" len="1"> </space>
             <word idx="59" len="120" quoted="quote">
+                <syntax idx="59" len="1">"</syntax>
                 <text idx="60" len="7">hello, </text>
                 <syntax idx="67" len="1">[</syntax>
                 <script idx="68" len="33" lineofs="16" linestarts="">
@@ -135,27 +137,38 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         </word>
                         <space idx="109" len="1"> </space>
                         <word idx="110" len="36" expand="" quoted="quote">
+                            <syntax idx="110" len="4">{*}"</syntax>
                             <var type="scalar" idx="114" len="10" name="scalarvar">
+                                <syntax idx="114" len="1">$</syntax>
                                 <text idx="115" len="9">scalarvar</text>
                             </var>
                             <text idx="124" len="21"> more string contents</text>
+                            <syntax idx="145" len="1">"</syntax>
                         </word>
                     </command>
                     <end idx="146" len="1">]</end>
                 </script>
                 <text idx="147" len="1"> </text>
                 <var type="array" idx="148" len="11" name="array">
+                    <syntax idx="148" len="1">$</syntax>
                     <text idx="149" len="5">array</text>
+                    <syntax idx="154" len="1">(</syntax>
                     <text idx="155" len="3">foo</text>
+                    <syntax idx="158" len="1">)</syntax>
                 </var>
                 <text idx="159" len="1"> </text>
                 <var type="array" idx="160" len="18" name="array">
+                    <syntax idx="160" len="1">$</syntax>
                     <text idx="161" len="5">array</text>
+                    <syntax idx="166" len="1">(</syntax>
                     <text idx="167" len="1">x</text>
                     <var type="scalar" idx="168" len="9" name="indexvar">
+                        <syntax idx="168" len="1">$</syntax>
                         <text idx="169" len="8">indexvar</text>
                     </var>
+                    <syntax idx="177" len="1">)</syntax>
                 </var>
+                <syntax idx="178" len="1">"</syntax>
             </word>
         </command>
         <end idx="179" len="1">
@@ -170,6 +183,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
             </word>
             <space idx="203" len="1"> </space>
             <word idx="204" len="67" quoted="brace" value="&#xA;			select&#xA;				*&#xA;			from&#xA;				things&#xA;			where&#xA;				interest &gt; .5&#xA;		">
+                <syntax idx="204" len="1">{</syntax>
                 <text idx="205" len="65">
 			select
 				*
@@ -178,6 +192,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 			where
 				interest &gt; .5
 		</text>
+                <syntax idx="270" len="1">}</syntax>
             </word>
         </command>
         <end idx="271" len="1">
@@ -190,7 +205,9 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
             </word>
             <space idx="279" len="1"> </space>
             <word idx="280" len="11" quoted="brace" value="foo\u306f">
+                <syntax idx="280" len="1">{</syntax>
                 <text idx="281" len="9">foo\u306f</text>
+                <syntax idx="290" len="1">}</syntax>
             </word>
         </command>
         <end idx="291" len="1">
@@ -201,9 +218,11 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                 <text idx="294" len="4">puts</text>
             </word>
             <space idx="298" len="1"> </space>
-            <word idx="299" len="11" quoted="quote" value="barは">
+            <word idx="299" len="11" quoted="quote" value="barは" valuetransformed="1">
+                <syntax idx="299" len="1">"</syntax>
                 <text idx="300" len="3">bar</text>
                 <escape idx="303" len="6">\u306f</escape>
+                <syntax idx="309" len="1">"</syntax>
             </word>
         </command>
         <space idx="310" len="2">  </space>
@@ -216,6 +235,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
             </word>
             <space idx="318" len="1"> </space>
             <word idx="319" len="12" quoted="brace" value="6 * 7 &lt; 42">
+                <syntax idx="319" len="1">{</syntax>
                 <text idx="320" len="10">6 * 7 &lt; 42</text>
                 <as>
                     <expr idx="320">
@@ -226,11 +246,17 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         <subexpr idx="320" len="1" orig="6" value="6">
                                             <text idx="320" len="1">6</text>
                                         </subexpr>
+                                        <syntax idx="321" len="1"> </syntax>
+                                        <syntax idx="322" len="1">*</syntax>
+                                        <syntax idx="323" len="1"> </syntax>
                                         <subexpr idx="324" len="1" orig="7" value="7">
                                             <text idx="324" len="1">7</text>
                                         </subexpr>
                                     </operator>
                                 </subexpr>
+                                <syntax idx="325" len="1"> </syntax>
+                                <syntax idx="326" len="1">&lt;</syntax>
+                                <syntax idx="327" len="1"> </syntax>
                                 <subexpr idx="328" len="2" orig="42" value="42">
                                     <text idx="328" len="2">42</text>
                                 </subexpr>
@@ -238,9 +264,11 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         </subexpr>
                     </expr>
                 </as>
+                <syntax idx="330" len="1">}</syntax>
             </word>
             <space idx="331" len="1"> </space>
             <word idx="332" len="24" quoted="brace" value="error &quot;math is broken&quot;">
+                <syntax idx="332" len="1">{</syntax>
                 <text idx="333" len="22">error "math is broken"</text>
                 <as>
                     <script idx="333" len="22" lineofs="0" linestarts="">
@@ -250,11 +278,14 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             </word>
                             <space idx="338" len="1"> </space>
                             <word idx="339" len="16" quoted="quote" value="math is broken">
+                                <syntax idx="339" len="1">"</syntax>
                                 <text idx="340" len="14">math is broken</text>
+                                <syntax idx="354" len="1">"</syntax>
                             </word>
                         </command>
                     </script>
                 </as>
+                <syntax idx="355" len="1">}</syntax>
             </word>
         </command>
         <end idx="356" len="1">
@@ -276,11 +307,13 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
             <space idx="376" len="1"> </space>
             <word idx="377" len="4">
                 <var type="scalar" idx="377" len="4" name="foo">
+                    <syntax idx="377" len="1">$</syntax>
                     <text idx="378" len="3">foo</text>
                 </var>
             </word>
             <space idx="381" len="1"> </space>
             <word idx="382" len="188" quoted="brace" value="&#xA;			a {puts &quot;foo is a&quot;}&#xA;			b &quot;puts \&quot;foo is b\&quot;&quot;&#xA;			c\u306fe {puts &quot;foo is c&quot;}&#xA;			&quot;d\u306fe&quot; {puts &quot;foo is d&quot;}&#xA;			{e\u306fe} {puts &quot;foo is e&quot;}&#xA;			default {puts &quot;foo is unanticipated&quot;}&#xA;		">
+                <syntax idx="382" len="1">{</syntax>
                 <text idx="383" len="186">
 			a {puts "foo is a"}
 			b "puts \"foo is b\""
@@ -300,7 +333,6 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         <word quoted="brace" value="puts &quot;foo is a&quot;" idx="389" len="17">
                             <syntax idx="389" len="1">{</syntax>
                             <text idx="390" len="15">puts "foo is a"</text>
-                            <syntax idx="405" len="1">}</syntax>
                             <as>
                                 <script idx="390" len="15" lineofs="0" linestarts="">
                                     <command idx="390" len="15" name="puts">
@@ -309,11 +341,14 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         </word>
                                         <space idx="394" len="1"> </space>
                                         <word idx="395" len="10" quoted="quote" value="foo is a">
+                                            <syntax idx="395" len="1">"</syntax>
                                             <text idx="396" len="8">foo is a</text>
+                                            <syntax idx="404" len="1">"</syntax>
                                         </word>
                                     </command>
                                 </script>
                             </as>
+                            <syntax idx="405" len="1">}</syntax>
                         </word>
                         <space idx="406" len="4">
 			</space>
@@ -321,13 +356,12 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                             <text idx="410" len="1">b</text>
                         </word>
                         <space idx="411" len="1"> </space>
-                        <word quoted="quote" value="puts &quot;foo is b&quot;" idx="412" len="19">
+                        <word quoted="quote" value="puts &quot;foo is b&quot;" valuetransformed="1" idx="412" len="19">
                             <syntax idx="412" len="1">"</syntax>
                             <text idx="413" len="5">puts </text>
                             <escape idx="418" len="2">\"</escape>
                             <text idx="420" len="8">foo is b</text>
                             <escape idx="428" len="2">\"</escape>
-                            <syntax idx="430" len="1">"</syntax>
                             <as>
                                 <script idx="413" len="15" lineofs="0" linestarts="">
                                     <command idx="413" len="15" name="puts">
@@ -336,11 +370,14 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         </word>
                                         <space idx="417" len="1"> </space>
                                         <word idx="418" len="10" quoted="quote" value="foo is b">
+                                            <syntax idx="418" len="1">"</syntax>
                                             <text idx="419" len="8">foo is b</text>
+                                            <syntax idx="427" len="1">"</syntax>
                                         </word>
                                     </command>
                                 </script>
                             </as>
+                            <syntax idx="430" len="1">"</syntax>
                         </word>
                         <space idx="431" len="4">
 			</space>
@@ -352,7 +389,6 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         <word quoted="brace" value="puts &quot;foo is c&quot;" idx="444" len="17">
                             <syntax idx="444" len="1">{</syntax>
                             <text idx="445" len="15">puts "foo is c"</text>
-                            <syntax idx="460" len="1">}</syntax>
                             <as>
                                 <script idx="445" len="15" lineofs="0" linestarts="">
                                     <command idx="445" len="15" name="puts">
@@ -361,15 +397,18 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         </word>
                                         <space idx="449" len="1"> </space>
                                         <word idx="450" len="10" quoted="quote" value="foo is c">
+                                            <syntax idx="450" len="1">"</syntax>
                                             <text idx="451" len="8">foo is c</text>
+                                            <syntax idx="459" len="1">"</syntax>
                                         </word>
                                     </command>
                                 </script>
                             </as>
+                            <syntax idx="460" len="1">}</syntax>
                         </word>
                         <space idx="461" len="4">
 			</space>
-                        <word quoted="quote" value="dはe" idx="465" len="10">
+                        <word quoted="quote" value="dはe" valuetransformed="1" idx="465" len="10">
                             <syntax idx="465" len="1">"</syntax>
                             <text idx="466" len="1">d</text>
                             <escape idx="467" len="6">\u306f</escape>
@@ -380,7 +419,6 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         <word quoted="brace" value="puts &quot;foo is d&quot;" idx="476" len="17">
                             <syntax idx="476" len="1">{</syntax>
                             <text idx="477" len="15">puts "foo is d"</text>
-                            <syntax idx="492" len="1">}</syntax>
                             <as>
                                 <script idx="477" len="15" lineofs="0" linestarts="">
                                     <command idx="477" len="15" name="puts">
@@ -389,11 +427,14 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         </word>
                                         <space idx="481" len="1"> </space>
                                         <word idx="482" len="10" quoted="quote" value="foo is d">
+                                            <syntax idx="482" len="1">"</syntax>
                                             <text idx="483" len="8">foo is d</text>
+                                            <syntax idx="491" len="1">"</syntax>
                                         </word>
                                     </command>
                                 </script>
                             </as>
+                            <syntax idx="492" len="1">}</syntax>
                         </word>
                         <space idx="493" len="4">
 			</space>
@@ -406,7 +447,6 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         <word quoted="brace" value="puts &quot;foo is e&quot;" idx="508" len="17">
                             <syntax idx="508" len="1">{</syntax>
                             <text idx="509" len="15">puts "foo is e"</text>
-                            <syntax idx="524" len="1">}</syntax>
                             <as>
                                 <script idx="509" len="15" lineofs="0" linestarts="">
                                     <command idx="509" len="15" name="puts">
@@ -415,11 +455,14 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         </word>
                                         <space idx="513" len="1"> </space>
                                         <word idx="514" len="10" quoted="quote" value="foo is e">
+                                            <syntax idx="514" len="1">"</syntax>
                                             <text idx="515" len="8">foo is e</text>
+                                            <syntax idx="523" len="1">"</syntax>
                                         </word>
                                     </command>
                                 </script>
                             </as>
+                            <syntax idx="524" len="1">}</syntax>
                         </word>
                         <space idx="525" len="4">
 			</space>
@@ -430,7 +473,6 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         <word quoted="brace" value="puts &quot;foo is unanticipated&quot;" idx="537" len="29">
                             <syntax idx="537" len="1">{</syntax>
                             <text idx="538" len="27">puts "foo is unanticipated"</text>
-                            <syntax idx="565" len="1">}</syntax>
                             <as>
                                 <script idx="538" len="27" lineofs="0" linestarts="">
                                     <command idx="538" len="27" name="puts">
@@ -439,16 +481,20 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                         </word>
                                         <space idx="542" len="1"> </space>
                                         <word idx="543" len="22" quoted="quote" value="foo is unanticipated">
+                                            <syntax idx="543" len="1">"</syntax>
                                             <text idx="544" len="20">foo is unanticipated</text>
+                                            <syntax idx="564" len="1">"</syntax>
                                         </word>
                                     </command>
                                 </script>
                             </as>
+                            <syntax idx="565" len="1">}</syntax>
                         </word>
                         <space idx="566" len="3">
 		</space>
                     </list>
                 </as>
+                <syntax idx="569" len="1">}</syntax>
             </word>
         </command>
         <end idx="570" len="1">
@@ -477,6 +523,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                         </word>
                         <space idx="869" len="1"> </space>
                         <word idx="870" len="436" quoted="brace" value="&#xA;			This is a var: $foo&#xA;			This is an array: $bar(baz,[cmdx; set x [cmdy asdf]])&#xA;			This is a command: [sfoo; sbar]&#xA;			These are escapes:&#xA;				\\u: -&gt;\u306f&lt;- (should be は)&#xA;				\\n: -&gt;\n&lt;- (should be a newline)&#xA;				\\x: -&gt;\x6565&lt;- (should be e65)&#xA;				\\o: -&gt;\101&lt;- (should be A)&#xA;				line continuation: foo-&gt; &lt;-bar&#xA;				literal: -&gt;\&quot;&lt;- (should be &quot;)&#xA;				lit u:	-&gt;\uXXX&lt;- (should be uXXX)&#xA;				literal: -&gt;\[&lt;- (should be open bracket)&#xA;		">
+                            <syntax idx="870" len="1">{</syntax>
                             <text idx="871" len="434">
 			This is a var: $foo
 			This is an array: $bar(baz,[cmdx; set x [cmdy asdf]])
@@ -496,12 +543,15 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                     <text idx="871" len="19">
 			This is a var: </text>
                                     <var type="scalar" idx="890" len="4" name="foo">
+                                        <syntax idx="890" len="1">$</syntax>
                                         <text idx="891" len="3">foo</text>
                                     </var>
                                     <text idx="894" len="22">
 			This is an array: </text>
                                     <var type="array" idx="916" len="35" name="bar">
+                                        <syntax idx="916" len="1">$</syntax>
                                         <text idx="917" len="3">bar</text>
+                                        <syntax idx="920" len="1">(</syntax>
                                         <text idx="921" len="4">baz,</text>
                                         <syntax idx="925" len="1">[</syntax>
                                         <script idx="926" len="24" lineofs="0" linestarts="">
@@ -539,6 +589,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
                                             </command>
                                             <end idx="949" len="1">]</end>
                                         </script>
+                                        <syntax idx="950" len="1">)</syntax>
                                     </var>
                                     <text idx="951" len="23">
 			This is a command: </text>
@@ -593,6 +644,7 @@ test parsetree-1.1 {Get parsetree from intrep} -body { #<<<
 		</text>
                                 </subst>
                             </as>
+                            <syntax idx="1305" len="1">}</syntax>
                         </word>
                     </command>
                     <end idx="1306" len="1">]</end>
@@ -625,6 +677,7 @@ test parsetree-2.1 {Script node character position} -body { #<<<
             </word>
             <space idx="7" len="1"> </space>
             <word idx="8" len="18" quoted="quote">
+                <syntax idx="8" len="1">"</syntax>
                 <text idx="9" len="8">hello, (</text>
                 <syntax idx="17" len="1">[</syntax>
                 <script idx="18" len="6" lineofs="17" linestarts="">
@@ -636,6 +689,7 @@ test parsetree-2.1 {Script node character position} -body { #<<<
                     <end idx="23" len="1">]</end>
                 </script>
                 <text idx="24" len="1">)</text>
+                <syntax idx="25" len="1">"</syntax>
             </word>
         </command>
         <end idx="26" len="1">
@@ -667,7 +721,7 @@ test parsetree-3.1 {Shimmer to string while orphaned refs remain bug} -body { #<
 	list [string range $script 0 3] [xpath [node $pt] {string(//command[@name="puts"][1]/word[2])}]
 } -cleanup {
 	unset -nocomplain script pt
-} -result {puts {hello, world}}
+} -result {puts {"hello, world"}}
 #>>>
 test parsetree-3.2 {Noderef string form does not leak heap pointers} -body { #<<<
 	set pt [parsetree {puts hi}]

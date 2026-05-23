@@ -11,7 +11,7 @@ package require parsetcl
 source [file join $here req.tcl]
 source [file join $here syntax.tcl]
 
-set nsadmin_cmd_parsers_fn	[file join $::env(HOME) git/nsadmin/helpers/nsadmin_cmd_parsers.tcl]
+set nsadmin_cmd_parsers_fn	[file join $::env(HOME) git/rl/helpers/nsadmin_cmd_parsers.tcl]
 if {[file readable $nsadmin_cmd_parsers_fn]} {
 	source $nsadmin_cmd_parsers_fn
 }
@@ -156,9 +156,9 @@ proc page_syntax {} { #<<<
 			}
 			<body {
 				set before	[clock microseconds]
-				set pt	[parsetcl::parsetree $script]
+				set pt	[parsetcl parsetree $script]
 				puts "parse: [format %.3f [expr {([clock microseconds]-$before)/1e3}]] ms"
-				highlight_script [xpath $pt /tcl/script] main ""
+				highlight_script [xpath [parsetcl node $pt] /tcl/script] main ""
 				<script type "module" {txt {
 					if ('serviceWorker' in navigator)
 						navigator.serviceWorker.register('/assets/serviceworker.js?9');

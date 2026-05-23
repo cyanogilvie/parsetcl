@@ -1,0 +1,27 @@
+package require tcltest
+namespace import ::tcltest::*
+
+loadTestedCommands
+
+proc test_xpath {script xpath} { #<<<
+	set pt	[parsetcl parsetree $script]
+	parsetcl xpath [parsetcl node $pt] $xpath
+}
+
+#>>>
+
+set n	0
+foreach {
+	desc									script							xpath												exp
+} {
+	{valuetransformed: plain word}			{proc "foo" "bar\ baz" b\x61r}	{ boolean(//command[1]/word[1]/@valuetransformed) }	0
+	{valuetransformed: quoted word}			{proc "foo" "bar\ baz" b\x61r}	{ boolean(//command[1]/word[2]/@valuetransformed) }	0
+	{valuetransformed: backquoted space}	{proc "foo" "bar\ baz" b\x61r}	{ boolean(//command[1]/word[3]/@valuetransformed) }	1
+	{valuetransformed: hex escape}			{proc "foo" "bar\ baz" b\x61r}	{ boolean(//command[1]/word[4]/@valuetransformed) }	1
+} {
+	test value-[incr n] $desc -body [list test_xpath $script $xpath] -result $exp
+}
+
+cleanupTests
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> shiftwidth=4 ts=4

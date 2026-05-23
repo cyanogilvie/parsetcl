@@ -1,0 +1,133 @@
+set dir	[file join [file dirname [file normalize [info script]]] ../tests/samples]
+foreach file [lsort -dictionary [glob -types f -directory $dir -tails *.tcl]] {
+	set h		[open [file join $dir $file] r]
+	set ::s		[try {read $h} finally {close $h}]
+	set name	[file rootname $file]
+
+	bench reassemble-sample-$name {Methods of reconstituting a parsed (and possibly mutated) script} -setup { #<<<
+		proc parse_and_text {walker script} { # Reconstitute the source from the parsetree DOM by walking it explicitly <<<
+			# A <word> with deep-parse alternatives (an <as> child)
+			# has two representations of the same byte range: the raw word tokens
+			# (<text>/<var>/<escape>/...) AND the interpretation under <as>.
+			# Inside such a word we must traverse <syntax> and <as> only, skipping
+			# the raw siblings; everywhere else we concatenate all text node content
+			# in document order (i.e., a normal asText).
+			set pt		[parsetcl parsetree $script]
+			$walker [parsetcl node $pt]
+		}
+
+		#>>>
+		proc walk_text_manual node { #<<<
+			set out	{}
+			switch -exact -- [domNode $node nodeType] {
+				ELEMENT_NODE {
+					set name		[domNode $node nodeName]
+					set as_child	{}
+					if {$name eq "word"} {
+						set as_child [parsetcl xpath $node {self::word[not(@valuetransformed)]/as/*[1]}]
+					}
+					if {$as_child ne {}} {
+						# Word with deep-parse alternative: emit <syntax> delimiters in
+						# their DOM order, substituting the <as> child for the raw
+						# representation between them (which is appended at the end of
+						# the DOM but lives inside the syntax brackets in source order).
+						set as_emitted	0
+						foreach child [domNode $node childNodes] {
+							set cname	[domNode $child nodeName]
+							if {$cname eq "syntax"} {
+								append out [walk_text_manual $child]
+							} elseif {$cname eq "as"} {
+								# emitted via the substitution below
+							} else {
+								if {!$as_emitted} {
+									append out [walk_text_manual $as_child]
+									set as_emitted 1
+								}
+							}
+						}
+					} else {
+						foreach child [domNode $node childNodes] {
+							if {[domNode $child nodeName] eq "as"} continue
+							append out [walk_text_manual $child]
+						}
+					}
+				}
+				TEXT_NODE {
+					append out [domNode $node nodeValue]
+				}
+			}
+			set out
+		}
+
+		#>>>
+		proc walk_text_xpath node { #<<<
+			set out	{}
+			switch -exact -- [domNode $node nodeType] {
+				ELEMENT_NODE {
+					if {[parsetcl xpath $node { boolean(self::word/as/*[1]) }]} {
+						if {[parsetcl xpath $node boolean(@valuetransformed)]} {
+							# The word value on which the `as` parse was done is transformed from
+							# the input characters (like constant-folded escape replacements) -
+							# we can't use it for the round-trip
+							foreach child [parsetcl xpath $node { *[not(self::as)] }] {
+								append out	[walk_text_xpath $child]
+							}
+						} else {
+							foreach child [domNode $node childNodes] {
+								append out [switch -exact -- [domNode $child nodeName] {
+									syntax	{ walk_text_xpath $child }
+									as		{ walk_text_xpath [domNode $child firstChild] }
+								}]
+							}
+						}
+					} else {
+						foreach child [domNode $node childNodes] {
+							append out [walk_text_xpath $child]
+						}
+					}
+				}
+				TEXT_NODE {
+					append out [domNode $node nodeValue]
+				}
+			}
+			set out
+		}
+
+		#>>>
+		proc strip_and_asText script { #<<<
+			# Consumers like pt.tcl drop the raw word-tokens in-place and rely on
+			# plain `asText` (depth-first text concatenation) to reconstruct the source.
+			# That only works if <as> sits BETWEEN the opening and trailing <syntax>
+			# delimiters of its parent word — append-at-end leaves it dangling outside.
+			set pt [parsetcl parsetree $script]
+			set tree [parsetcl node $pt]
+			# Mutates the parsetree document directly — drop raw word reps when
+			# an <as> alternative exists, then asText the whole tree.
+			foreach n [parsetcl xpath $tree {
+				//word[@valuetransformed]/as
+			}] {
+				# These parses were done on a transformed static value, can't use for
+				# round-trips
+				domNode $n delete
+			}
+			foreach n [parsetcl xpath $tree {
+				//word[as]/*[not(self::as or self::syntax)] |
+				//word/as/*[position() > 1]
+			}] {
+				domNode $n delete
+			}
+			domNode $tree asText
+		}
+
+		#>>>
+	} -overhead {
+		*	{ parsetcl parsetree $::s }
+	} -compare {
+		walk_text_manual	{ parse_and_text walk_text_manual $::s }
+		walk_text_xpath		{ parse_and_text walk_text_xpath  $::s }
+		strip_and_asText	{ strip_and_asText $::s }
+	} -result $::s
+	#>>>
+}
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> ts=4 shiftwidth=4 noexpandtab

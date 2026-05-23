@@ -1,0 +1,183 @@
+package require tcltest
+namespace import ::tcltest::*
+
+::tcltest::loadTestedCommands
+namespace import ::parsetcl::*
+
+proc parse_and_text script { # Reconstitute the source from the parsetree DOM by walking it explicitly <<<
+   	# A <word> with deep-parse alternatives (an <as> child)
+	# has two representations of the same byte range: the raw word tokens
+	# (<text>/<var>/<escape>/...) AND the interpretation under <as>.
+	# Inside such a word we must traverse <syntax> and <as> only, skipping
+	# the raw siblings; everywhere else we concatenate all text node content
+	# in document order (i.e., a normal asText).
+	set pt		[parsetcl parsetree $script]
+	walk_text [parsetcl node $pt]
+}
+
+#>>>
+proc walk_text node { #<<<
+	set out	{}
+	switch -exact -- [domNode $node nodeType] {
+		ELEMENT_NODE {
+			if 0 {
+			set name		[domNode $node nodeName]
+			set as_child	{}
+			if {$name eq "word"} {
+				set as_child [xpath $node {as/*[1]}]
+			}
+			if {$as_child ne {}} {
+				# Word with deep-parse alternative: emit <syntax> delimiters in
+				# their DOM order, substituting the <as> child for the raw
+				# representation between them (which is appended at the end of
+				# the DOM but lives inside the syntax brackets in source order).
+				set as_emitted	0
+				foreach child [domNode $node childNodes] {
+					set cname	[domNode $child nodeName]
+					if {$cname eq "syntax"} {
+						append out [walk_text $child]
+					} elseif {$cname eq "as"} {
+						# emitted via the substitution below
+					} else {
+						if {!$as_emitted} {
+							append out [walk_text $as_child]
+							set as_emitted 1
+						}
+					}
+				}
+			} else {
+				foreach child [domNode $node childNodes] {
+					append out [walk_text $child]
+				}
+			}
+			} else {
+				if {[xpath $node { boolean(self::word/as/*[1]) }]} {
+					if {[xpath $node boolean(@valuetransformed)]} {
+						# The word value on which the `as` parse was done is transformed from
+						# the input characters (like constant-folded escape replacements) -
+						# we can't use it for the round-trip
+						foreach child [xpath $node { *[not(self::as)] }] {
+							append out	[walk_text $child]
+						}
+					} else {
+						foreach child [domNode $node childNodes] {
+							append out [switch -exact -- [domNode $child nodeName] {
+								syntax	{ walk_text $child }
+								as		{ walk_text [domNode $child firstChild] }
+							}]
+						}
+					}
+				} else {
+					foreach child [domNode $node childNodes] {
+						append out [walk_text $child]
+					}
+				}
+			}
+		}
+		TEXT_NODE {
+			append out [domNode $node nodeValue]
+		}
+	}
+	set out
+}
+
+#>>>
+proc strip_and_asText script { #<<<
+	# Consumers like pt.tcl drop the raw word-tokens in-place and rely on
+	# plain `asText` (depth-first text concatenation) to reconstruct the source.
+	# That only works if <as> sits BETWEEN the opening and trailing <syntax>
+	# delimiters of its parent word — append-at-end leaves it dangling outside.
+	set pt [parsetcl parsetree $script]
+	set tree [parsetcl node $pt]
+	# Mutates the parsetree document directly — drop raw word reps when
+	# an <as> alternative exists, then asText the whole tree.
+	foreach n [xpath $tree {
+		//word[@valuetransformed]/as
+	}] {
+		# These parses were done on a transformed static value, can't use for
+		# round-trips
+		domNode $n delete
+	}
+	foreach n [xpath $tree {
+		//word[as]/*[not(self::as or self::syntax)] |
+		//word/as/*[position() > 1]
+	}] {
+		domNode $n delete
+	}
+	domNode $tree asText
+}
+
+#>>>
+
+# word delimiters
+set n	0
+foreach {desc s} [list \
+	{bare word}									foo						\
+	{double-quoted word, plain}					{puts "hello, world"}	\
+	{braced word, plain}						{puts {hello, world}}	\
+	{trailing newline preserved}				"puts foo\n"			\
+	{multiple commands separated by newline}	"puts foo\nputs bar"	\
+	{multiple commands separated by ;}			{puts foo; puts bar}	\
+	{braced word with embedded braces}			{set x {a {b} c}}		\
+	{expand prefix on bare word}				{foo {*}bar}			\
+	{leading whitespace and comments}			"  # leading comment\n  puts foo" \
+] {
+	test roundtrip-words-[incr n] $desc -body [list parse_and_text $s] -result $s
+}
+
+# variable delimiters
+set n	0
+foreach {desc s} [list \
+	{scalar var inside quoted word}							{puts "$foo"}			\
+	{array var}												{puts $foo(bar)}		\
+	{braced scalar var}										{puts ${foo}}			\
+	{array var with substitution in index}					{puts $foo($bar)}		\
+	{array var with literal index containing substitution}	{puts $foo(a${bar}c)}	\
+	{scalar var followed by literal text}					{puts "$foo bar"}		\
+	{expand prefix on var-substituted word}					{foo {*}$bar}			\
+] {
+	test roundtrip-vars-[incr n] $desc -body [list parse_and_text $s] -result $s
+}
+
+# subexpr/operator gap fills
+set n	0
+foreach {desc s} [list \
+	{expr with whitespace around operator}	{if {1 + 2 == 3} {puts ok}}			\
+	{nested parens in expr}					{if {(1 + 2) * 3 == 9} {puts ok}}	\
+	{function call in expr}					{if {sin(0.5) > 0} {puts ok}}		\
+	{ternary}								{set x [expr {$a ? $b : $c}]}		\
+	{function with multiple args}			{set x [expr {pow(2, 3)}]}			\
+	{unary not on parenthesized subexpr}	{if {!(1 < 2)} {puts ok}}			\
+	{chained addition}						{set x [expr {1 + 2 + 3}]}			\
+	{nested function calls}					{set x [expr {sin(cos(0.5))}]}		\
+	{0-arity functions}						{expr {rand()}}						\
+] {
+	test roundtrip-expr-[incr n] $desc -body [list parse_and_text $s] -result $s
+}
+
+set n	0
+foreach {desc s} [list \
+	{braced expr arg}						{if {1 + 2 == 3} {puts ok}}					\
+	{proc args+body}						{proc foo {a b} {return [expr {$a + $b}]}}	\
+	{nested deep parses}					{if {[string length $x] > 0} {puts hi}}		\
+	{valuetransformed: backquoted space}	{proc t3 {} "set x\ y z"}					\
+	{valuetransformed: backquoted bs}		{proc t3 {} "set x\\ y z"}					\
+	{valuetransformed: unicode escape}		{proc test "foo bar" b\u0061z\ xyz\;set\ foo\ bar\nputs\ "x"}	\
+] {
+	test roundtrip-strip-[incr n].1 "filtered-walk: $desc" -body [list parse_and_text   $s] -result $s
+	test roundtrip-strip-[incr n].2 "strip+asText:  $desc" -body [list strip_and_asText $s] -result $s
+}
+
+# torture tests: larger scripts, obscure parser edge cases, linefolds in comments, parse-time {*} rewrites, specific bug repros, coverage golf, etc.
+set dir	[file join [file dirname [file normalize [info script]]] samples]
+foreach file [lsort -dictionary [glob -types f -directory $dir -tails *.tcl]] {
+	set h		[open [file join $dir $file] r]
+	set s		[try {read $h} finally {close $h}]
+	set name	[file rootname $file]
+	test roundtrip-sample-$name-1 "samples/$name filtered walk" -body [list parse_and_text   $s] -result $s
+	test roundtrip-sample-$name-2 "samples/$name strip+asText"  -body [list strip_and_asText $s] -result $s
+}
+
+::tcltest::cleanupTests
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> shiftwidth=4 ts=4 noexpandtab
