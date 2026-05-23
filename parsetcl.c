@@ -28,10 +28,8 @@
 		if (full && (length)>0) { \
 			domNode*	node = domNewElementNode(doc, (type)); \
 			domAppendNewTextNode(node, (char*)(from), (length), TEXT_NODE, 0); \
-			if (full) { \
-				SET_UINT_ATTR(node, "idx", (from)-text+ofs); \
-				SET_UINT_ATTR(node, "len", (length)); \
-			} \
+			SET_UINT_ATTR(node, "idx", (from)-text+ofs); \
+			SET_UINT_ATTR(node, "len", (length)); \
 			domAppendChild((parent), node); \
 		} \
 	} while(0)
@@ -69,15 +67,32 @@ struct pidata {
 Tcl_ThreadDataKey tsd_ptdata;
 struct ptdata {
 	bool			initialized;
-	Tcl_HashTable	scriptdoms;
+	uintptr_t		next_cookie;	// Per-thread monotonic; 0 reserved for "invalid"
+	Tcl_HashTable	scriptdoms;		// cookie -> scriptdom Tcl_Obj*
 };
 
+static void thread_exit_ptdata(ClientData cd) //<<<
+{
+	struct ptdata*	td = cd;
+	if (td->initialized) {
+		// By the time we run, all interps in this thread have been deleted and
+		// their Tcl_Objs released — which means free_parsetree has already
+		// removed every entry it added.  The hash should be empty; just release
+		// the bucket storage.
+		Tcl_DeleteHashTable(&td->scriptdoms);
+		td->initialized = false;
+	}
+}
+
+//>>>
 static struct ptdata* get_ptdata() //<<<
 {
 	struct ptdata* td = Tcl_GetThreadData(&tsd_ptdata, sizeof(*td));
 	if (!td->initialized) {
 		Tcl_InitHashTable(&td->scriptdoms, TCL_ONE_WORD_KEYS);
+		td->next_cookie = 1;
 		td->initialized = true;
+		Tcl_CreateThreadExitHandler(thread_exit_ptdata, td);
 	}
 
 	return td;
@@ -125,7 +140,9 @@ extern const char* Tdom_InitStubs(Tcl_Interp* interp, char* version, int exact);
 // Prototypes >>>
 
 static void free_parsetree(Tcl_Obj* obj);
+static void free_ast(Tcl_Obj* obj);
 static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest);
+static void dup_ast(Tcl_Obj* src, Tcl_Obj* dest);
 static void update_string_rep_parsetree(Tcl_Obj* obj);
 static void free_lineidx(Tcl_Obj* obj);
 static void dup_lineidx(Tcl_Obj* src, Tcl_Obj* dest);
@@ -143,8 +160,8 @@ Tcl_ObjType parsetree = {
 
 Tcl_ObjType astObjtype = {
 	.name				= "parsetcl::ast",
-	.freeIntRepProc		= free_parsetree,
-	.dupIntRepProc		= dup_parsetree,
+	.freeIntRepProc		= free_ast,
+	.dupIntRepProc		= dup_ast,
 	.updateStringProc	= update_string_rep_parsetree,
 };
 
@@ -170,48 +187,69 @@ struct lineidx_intrep {
 	struct lineidx		lineidx[];
 };
 
-static void free_parsetree(Tcl_Obj* obj) //<<<
+// twoPtrValue.ptr1 = domDocument*, twoPtrValue.ptr2 = (void*)(uintptr_t)cookie
+// The cookie keys this scriptdom in the per-thread scriptdoms hash so that
+// noderefs serialized to strings can be safely revived without leaking heap
+// pointers into the script and without risking Tcl_Obj-slot reuse aliasing.
+
+static void free_parsetree_intrep(Tcl_Obj* obj, const Tcl_ObjType* type) //<<<
 {
-	//fprintf(stderr, "free_parsetree\n");
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, type);
+	if (!ir) return;
 
-	struct ptdata* td = get_ptdata();
-	Tcl_HashEntry*	he = Tcl_FindHashEntry(&td->scriptdoms, obj);
-	if (he) Tcl_DeleteHashEntry(he);
+	const uintptr_t	cookie = (uintptr_t)ir->twoPtrValue.ptr2;
+	if (cookie) {
+		struct ptdata*	td = get_ptdata();
+		Tcl_HashEntry*	he = Tcl_FindHashEntry(&td->scriptdoms, (void*)cookie);
+		if (he) Tcl_DeleteHashEntry(he);
+	}
 
-	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &parsetree);
-	if (ir && ir->twoPtrValue.ptr1) {
-		//fprintf(stderr, "freeing doc: %p\n", ir->twoPtrValue.ptr1);
+	if (ir->twoPtrValue.ptr1) {
 		domFreeDocument((domDocument*)ir->twoPtrValue.ptr1, NULL, NULL);
 		ir->twoPtrValue.ptr1 = NULL;
 	}
 }
 
 //>>>
-static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest) //<<<
+static void free_parsetree(Tcl_Obj* obj) { free_parsetree_intrep(obj, &parsetree); }
+static void free_ast      (Tcl_Obj* obj) { free_parsetree_intrep(obj, &astObjtype); }
+
+//>>>
+static void dup_parsetree_intrep(Tcl_Obj* src, Tcl_Obj* dest, const Tcl_ObjType* type) //<<<
 {
-	fprintf(stderr, "dup_parsetree\n");
+	Tcl_ObjInternalRep*	srcir = Tcl_FetchInternalRep(src, type);
+	if (!srcir) return;
 
-	Tcl_ObjInternalRep*	srcir = Tcl_FetchInternalRep(src, &parsetree);
-	if (!srcir) Tcl_Panic("dup_internal_rep asked to duplicate for type, but that type wasn't available on the src object");
-
-	domNode*		srcroot = srcir->twoPtrValue.ptr2;
+	domDocument*	srcdoc = srcir->twoPtrValue.ptr1;
 	domDocument*	destdoc = domCreateDoc(NULL, 0);
-	domNode*		destroot = domCloneNode(srcroot, 1);
+	domNode*		destroot = domCloneNode(srcdoc->documentElement, 1);
 
-	destdoc->rootNode->firstChild = destdoc->rootNode->lastChild = destdoc->documentElement;
+	destdoc->rootNode->firstChild = destdoc->rootNode->lastChild = destroot;
 	domSetDocumentElement(destdoc);
 
-	Tcl_StoreInternalRep(dest, &parsetree, &(Tcl_ObjInternalRep){
+	// The dup is a fresh scriptdom: assign a new cookie and register it.
+	struct ptdata*	td = get_ptdata();
+	const uintptr_t	cookie = td->next_cookie++;
+	int				isnew;
+	Tcl_HashEntry*	he = Tcl_CreateHashEntry(&td->scriptdoms, (void*)cookie, &isnew);
+	Tcl_SetHashValue(he, dest);
+
+	Tcl_StoreInternalRep(dest, type, &(Tcl_ObjInternalRep){
 		.twoPtrValue.ptr1 = destdoc,
-		.twoPtrValue.ptr2 = destroot,
+		.twoPtrValue.ptr2 = (void*)cookie,
 	});
 }
+
+//>>>
+static void dup_parsetree(Tcl_Obj* src, Tcl_Obj* dest) { dup_parsetree_intrep(src, dest, &parsetree); }
+static void dup_ast      (Tcl_Obj* src, Tcl_Obj* dest) { dup_parsetree_intrep(src, dest, &astObjtype); }
 
 //>>>
 static void update_string_rep_parsetree(Tcl_Obj* obj) //<<<
 {
 	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &parsetree);
-	domNode*			node = ir->twoPtrValue.ptr2;
+	if (!ir) ir = Tcl_FetchInternalRep(obj, &astObjtype);
+	domNode*			node = ((domDocument*)ir->twoPtrValue.ptr1)->documentElement;
 
 	// To make an XML Tcl_ObjType (which would be useful), serialize to XML here
 	Tcl_DString	res;
@@ -282,14 +320,14 @@ static void update_string_rep_lineidx(Tcl_Obj* obj) //<<<
 	for (uint32_t i=0; i<l->lines; i++) {
 		const struct lineidx*const	lineidx = &l->lineidx[i];
 		const struct line*const		line = lineidx->line;
-		u64toa(line->bytestart, tmp);
+		tmp[u64toa(line->bytestart, tmp)] = 0;
 		Tcl_DStringStartSublist(&ds);
 		Tcl_DStringAppendElement(&ds, tmp);
 		Tcl_DStringStartSublist(&ds);
 		for (uint32_t j=0; j<line->lineadjs; j++) {
 			const struct encskip*const	adj = &line->skips[j];
-			u64toa(adj->bytestart, tmp); Tcl_DStringAppendElement(&ds, tmp);
-			u64toa(adj->adj, tmp);       Tcl_DStringAppendElement(&ds, tmp);
+			tmp[u64toa(adj->bytestart, tmp)] = 0; Tcl_DStringAppendElement(&ds, tmp);
+			tmp[u64toa(adj->adj, tmp)] = 0;       Tcl_DStringAppendElement(&ds, tmp);
 		}
 		Tcl_DStringEndSublist(&ds);
 		Tcl_DStringEndSublist(&ds);
@@ -406,9 +444,10 @@ eof:
 
 // Noderef objtype <<<
 struct noderef {
-	Tcl_Obj*	scriptdom;
-	Tcl_Obj*	tdomnodeobj;
+	Tcl_Obj*	scriptdom;		// Keeps the doc alive (via parsetree intrep refcount)
+	Tcl_Obj*	tdomnodeobj;	// tdom command name string ("domNodeNN")
 	domNode*	node;
+	uintptr_t	cookie;			// Looks up scriptdom in scriptdoms hash on revive
 };
 
 static void free_noderef(Tcl_Obj* obj) //<<<
@@ -429,7 +468,7 @@ static void dup_noderef(Tcl_Obj* src, Tcl_Obj* dst) //<<<
 	struct noderef*		srcIr = ir->otherValuePtr;
 	struct noderef*		dstIr = ckalloc(sizeof *dstIr);
 
-	*dstIr = (struct noderef){ .node = srcIr->node };
+	*dstIr = (struct noderef){ .node = srcIr->node, .cookie = srcIr->cookie };
 	replace_tclobj(&dstIr->scriptdom,	srcIr->scriptdom);
 	replace_tclobj(&dstIr->tdomnodeobj,	srcIr->tdomnodeobj);
 
@@ -447,8 +486,9 @@ static void update_string_rep_noderef(Tcl_Obj* obj) //<<<
 	Tcl_DStringInit(&ds);
 	defer { Tcl_DStringFree(&ds); }
 
-	char	tmp[21];		// Max decimal digits in 2**64: 20 +1 for \0
-	u64toa((uintptr_t)ref->scriptdom, tmp);
+	char		tmp[21];		// Max decimal digits in 2**64: 20 +1 for \0
+	const int	len = u64toa(ref->cookie, tmp);
+	tmp[len] = 0;
 
 	Tcl_DStringAppendElement(&ds, "parsetcl_noderef");
 	Tcl_DStringAppendElement(&ds, Tcl_GetString(ref->tdomnodeobj));
@@ -470,12 +510,15 @@ static int GetNoderefFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct noderef** 
 			strcmp("parsetcl_noderef", Tcl_GetString(ov[0]))
 		) THROW_ERROR("Not a node ref");
 
-		Tcl_WideInt	scriptdom_int;
-		TEST_OK(Tcl_GetWideIntFromObj(interp, ov[2], &scriptdom_int));
-		Tcl_Obj*	scriptdom = (Tcl_Obj*)(uintptr_t)scriptdom_int;
+		Tcl_WideInt	cookie_wide;
+		TEST_OK(Tcl_GetWideIntFromObj(interp, ov[2], &cookie_wide));
+		if (cookie_wide <= 0) THROW_ERROR("The script dom the node refers to does not exist in this thread");
+		const uintptr_t	cookie = (uintptr_t)cookie_wide;
+
 		struct ptdata*	td = get_ptdata();
-		Tcl_HashEntry*	he = Tcl_FindHashEntry(&td->scriptdoms, scriptdom);
+		Tcl_HashEntry*	he = Tcl_FindHashEntry(&td->scriptdoms, (void*)cookie);
 		if (!he) THROW_ERROR("The script dom the node refers to does not exist in this thread");
+		Tcl_Obj*	scriptdom = Tcl_GetHashValue(he);
 
 		char*		errmsg = NULL;
 		domNode*	node = tcldom_getNodeFromName(interp, Tcl_GetString(ov[1]), &errmsg);
@@ -487,7 +530,7 @@ static int GetNoderefFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct noderef** 
 		}
 
 		struct noderef* ref = ckalloc(sizeof *ref);
-		*ref = (struct noderef){ .node = node };
+		*ref = (struct noderef){ .node = node, .cookie = cookie };
 		replace_tclobj(&ref->scriptdom,		scriptdom);
 		replace_tclobj(&ref->tdomnodeobj,	ov[1]);
 
@@ -501,19 +544,18 @@ static int GetNoderefFromObj(Tcl_Interp* interp, Tcl_Obj* obj, struct noderef** 
 }
 
 //>>>
-static Tcl_Obj* NewNoderefObj(Tcl_Interp* interp, domNode* node, Tcl_Obj* scriptdom) //<<<
+static Tcl_Obj* NewNoderefObj(Tcl_Interp* interp, domNode* node, Tcl_Obj* scriptdom, uintptr_t cookie) //<<<
 {
 	char	nodecmd[80];
-	tcldom_createNodeObj(interp, node->ownerDocument->documentElement, nodecmd);
+	tcldom_createNodeObj(interp, node, nodecmd);
 
 	struct noderef*	ref = ckalloc(sizeof(*ref));
-	*ref = (struct noderef){ .node = node };
+	*ref = (struct noderef){ .node = node, .cookie = cookie };
 	replace_tclobj(&ref->scriptdom,		scriptdom);
 	replace_tclobj(&ref->tdomnodeobj,	Tcl_NewStringObj(nodecmd, -1));
 
 	Tcl_Obj*	res = Tcl_NewObj();
 	Tcl_StoreInternalRep(res, &nodereftype, &(Tcl_ObjInternalRep){.otherValuePtr = ref});
-	//update_string_rep_noderef(res);
 	Tcl_InvalidateStringRep(res);
 	return res;
 }
@@ -2063,42 +2105,50 @@ static int parse_tcl_script(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* scrip
 }
 
 //>>>
-static int get_parsetree_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, domDocument** doc) //<<<
+static int parse_and_register(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, const Tcl_ObjType* type, int full, uintptr_t* cookie_out) //<<<
 {
-	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &parsetree);
-	if (!ir) {
-		domDocument*	doc = NULL;		defer { if (doc) domFreeDocument(doc, NULL, NULL); }
-		TEST_OK(parse_tcl_script(interp, l, obj, &doc, 1));
-		Tcl_StoreInternalRep(obj, &parsetree, &(Tcl_ObjInternalRep){.twoPtrValue.ptr1 = doc});
-		doc = NULL;	// Hand ownership to the intrep
+	domDocument*	doc = NULL;		defer { if (doc) domFreeDocument(doc, NULL, NULL); }
+	TEST_OK(parse_tcl_script(interp, l, obj, &doc, full));
 
-		struct ptdata* td = get_ptdata();
-		int isnew;
-		Tcl_CreateHashEntry(&td->scriptdoms, obj, &isnew);
+	struct ptdata*	td = get_ptdata();
+	const uintptr_t	cookie = td->next_cookie++;
+	int				isnew;
+	Tcl_HashEntry*	he = Tcl_CreateHashEntry(&td->scriptdoms, (void*)cookie, &isnew);
+	Tcl_SetHashValue(he, obj);
 
-		ir = Tcl_FetchInternalRep(obj, &parsetree);
-	}
-	*doc = (domDocument*)ir->twoPtrValue.ptr1;
+	Tcl_StoreInternalRep(obj, type, &(Tcl_ObjInternalRep){
+		.twoPtrValue.ptr1 = doc,
+		.twoPtrValue.ptr2 = (void*)cookie,
+	});
+	doc = NULL;	// Hand ownership to the intrep
+
+	if (cookie_out) *cookie_out = cookie;
 	return TCL_OK;
 }
 
 //>>>
-static int get_ast_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, domDocument** doc) //<<<
+static int get_parsetree_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, domDocument** doc, uintptr_t* cookie) //<<<
+{
+	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &parsetree);
+	if (!ir) {
+		TEST_OK(parse_and_register(interp, l, obj, &parsetree, 1, NULL));
+		ir = Tcl_FetchInternalRep(obj, &parsetree);
+	}
+	*doc = (domDocument*)ir->twoPtrValue.ptr1;
+	if (cookie) *cookie = (uintptr_t)ir->twoPtrValue.ptr2;
+	return TCL_OK;
+}
+
+//>>>
+static int get_ast_from_obj(Tcl_Interp* interp, struct pidata* l, Tcl_Obj* obj, domDocument** doc, uintptr_t* cookie) //<<<
 {
 	Tcl_ObjInternalRep*	ir = Tcl_FetchInternalRep(obj, &astObjtype);
 	if (!ir) {
-		domDocument*	doc = NULL;		defer { if (doc) domFreeDocument(doc, NULL, NULL); }
-		TEST_OK(parse_tcl_script(interp, l, obj, &doc, 0));
-		Tcl_StoreInternalRep(obj, &astObjtype, &(Tcl_ObjInternalRep){ .twoPtrValue.ptr1 = doc });
-		doc = NULL;	// Hand ownership to the intrep
-
-		struct ptdata* td = get_ptdata();
-		int isnew;
-		Tcl_CreateHashEntry(&td->scriptdoms, obj, &isnew);
-
+		TEST_OK(parse_and_register(interp, l, obj, &astObjtype, 0, NULL));
 		ir = Tcl_FetchInternalRep(obj, &astObjtype);
 	}
-	*doc = ir->twoPtrValue.ptr1;
+	*doc = (domDocument*)ir->twoPtrValue.ptr1;
+	if (cookie) *cookie = (uintptr_t)ir->twoPtrValue.ptr2;
 	return TCL_OK;
 }
 
@@ -2118,9 +2168,10 @@ static int get_parsetree(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj
 	replace_tclobj(&scriptdom, Tcl_DuplicateObj(objv[A_SCRIPT]));
 
 	domDocument*	doc = NULL;
-	TEST_OK(get_parsetree_from_obj(interp, l, scriptdom, &doc));
+	uintptr_t		cookie = 0;
+	TEST_OK(get_parsetree_from_obj(interp, l, scriptdom, &doc, &cookie));
 
-	Tcl_SetObjResult(interp, NewNoderefObj(interp, doc->documentElement, scriptdom));
+	Tcl_SetObjResult(interp, NewNoderefObj(interp, doc->documentElement, scriptdom, cookie));
 
 	return TCL_OK;
 }
@@ -2141,9 +2192,10 @@ static int get_ast(ClientData cdata, Tcl_Interp* interp, int objc, Tcl_Obj *cons
 	replace_tclobj(&scriptdom, Tcl_DuplicateObj(objv[A_SCRIPT]));
 
 	domDocument*	doc = NULL;
-	TEST_OK(get_ast_from_obj(interp, l, scriptdom, &doc));
+	uintptr_t		cookie = 0;
+	TEST_OK(get_ast_from_obj(interp, l, scriptdom, &doc, &cookie));
 
-	Tcl_SetObjResult(interp, NewNoderefObj(interp, doc->documentElement, scriptdom));
+	Tcl_SetObjResult(interp, NewNoderefObj(interp, doc->documentElement, scriptdom, cookie));
 
 	return TCL_OK;
 }

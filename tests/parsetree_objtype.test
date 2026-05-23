@@ -669,6 +669,46 @@ test parsetree-3.1 {Shimmer to string while orphaned refs remain bug} -body { #<
 	unset -nocomplain script pt
 } -result {puts {hello, world}}
 #>>>
+test parsetree-3.2 {Noderef string form does not leak heap pointers} -body { #<<<
+	set pt [parsetree {puts hi}]
+	# Force serialization
+	set s [string range $pt 0 end]
+	# Expect three list elements: tag, tdom command name, integer cookie
+	lassign $s tag cmd cookie
+	list \
+		$tag \
+		[regexp {^domNode[0-9a-fx]+$} $cmd] \
+		[string is integer -strict $cookie] \
+		[expr {$cookie > 0}]
+} -cleanup {
+	unset -nocomplain pt s tag cmd cookie
+} -result {parsetcl_noderef 1 1 1}
+#>>>
+test parsetree-3.3 {Forged noderef with unknown cookie is rejected} -body { #<<<
+	parsetcl::node {parsetcl_noderef domNode0xdeadbeef 999999999}
+} -returnCodes error -result {The script dom the node refers to does not exist in this thread}
+#>>>
+test parsetree-3.4 {Forged noderef with reserved cookie 0 is rejected} -body { #<<<
+	parsetcl::node {parsetcl_noderef domNode0xdeadbeef 0}
+} -returnCodes error -result {The script dom the node refers to does not exist in this thread}
+#>>>
+test parsetree-3.5 {Noderef revived while pt still exists works} -body { #<<<
+	set pt [parsetree {set x 1}]
+	set s  [string range " $pt" 1 end]
+	xpath [parsetcl::node $s] {string(//command[@name="set"]/word[2])}
+} -cleanup {
+	unset -nocomplain pt s
+} -result x
+#>>>
+test parsetree-3.6 {Noderef revived after pt dropped fails cleanly} -body { #<<<
+	set pt [parsetree {set x 1}]
+	set s  [string range " $pt" 1 end]
+	unset pt
+	xpath [parsetcl::node $s] {string(//command[@name="set"]/word[2])}
+} -cleanup {
+	unset -nocomplain pt s
+} -returnCodes error -result {The script dom the node refers to does not exist in this thread}
+#>>>
 
 ::tcltest::cleanupTests
 
