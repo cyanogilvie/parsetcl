@@ -48,7 +48,7 @@ teaconf_files += files(
 
 # --- Teabase init (must come first) ---
 # Provides: pkg_dir, tclsh, tcl_dep, teaconf
-#subdir('teabase/init')
+subdir('teabase/init')
 
 # --- tdom dependency (for parsing into a tDOM document) ---
 # Prefer pkg-config (tdom.pc lands in tcl_dep's libdir/pkgconfig when tdom
@@ -59,6 +59,10 @@ deps += dependency('tdom',
   version:          '>=0.9.6.4',
   default_options:  ['html5=disabled'],
 )
+
+tea_test_deps += dependency('rl_json',    required: true)
+tea_test_deps += dependency('parse_args', required: true)
+tea_test_deps += dependency('type',       required: true)
 
 # --- Teabase main (builds shared_module, sets up tests, devenv) ---
 subdir('teabase')

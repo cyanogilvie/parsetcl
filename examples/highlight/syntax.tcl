@@ -367,24 +367,7 @@ proc highlight_operator n { #<<<
 #>>>
 proc highlight_subexpr subexpr { #<<<
 	upvar 1 ws ws orig orig ofs ofs parens parens
-	set idx		[domNode $subexpr getAttribute idx]
-	set len		[domNode $subexpr getAttribute len]
-	set to		[expr {$idx + $len}]
-	set extra	{}
-	if {
-		[dict exists $parens $idx] && [dict get $parens $idx] eq "(" &&
-		[dict exists $parens $to]  && [dict get $parens $to]  ne "("
-	} {
-		lappend extra parens {}
-		set tail_ws	[dict get $parens $to]
-	}
-	<tcl-subexpr {*}$extra {
-		if {
-			[dict exists $ws $idx] &&
-			![xpath $subexpr {boolean(operator/subexpr[@idx=$idx])}]
-		} {
-			<tcl-space {txt [dict get $ws $idx]}
-		}
+	<tcl-subexpr {
 		foreach n [xpath $subexpr *] {
 			switch -exact -- [domNode $n nodeName] {
 				operator	{ highlight_operator $n }
@@ -501,7 +484,7 @@ proc highlight_tokens {parent {skip 0}} { #<<<
 				#puts stderr "Unhandled as: [domNode $n asXML]"
 			}
 			syntax {
-				puts stderr "Syntax token: [domNode $n asXML]"
+				highlight_syntax $n
 			}
 			default {
 				error "Unhandled word token: \"[domNode $n nodeName]\""
@@ -549,6 +532,9 @@ proc highlight_command commandnode { #<<<
 					<tcl-end {
 						txt [domNode $n asText]
 					}
+				}
+				syntax {
+					highlight_syntax $n
 				}
 				default {
 					error "Unhandled command node: [domNode $n nodeName]"

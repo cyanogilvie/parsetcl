@@ -141,7 +141,7 @@ proc page_syntax {} { #<<<
 	set script	[if {[req method] eq "PUT"} {
 		req body
 	} else {
-		chantricks::readfile [file join $::here [form_val script t.tcl]]
+		chantricks readfile [file join $::here [form_val script t.tcl]]
 	}]
 	set body	"<!DOCTYPE html>\n"
 	append body [html {
