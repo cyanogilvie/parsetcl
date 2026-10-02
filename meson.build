@@ -1,5 +1,5 @@
 project('parsetcl', 'c',
-  version:          '0.3',
+  version:          '0.4',
   default_options:  ['c_std=gnu2y,gnu23,gnu2x', 'warning_level=3', 'werror=true'],
   meson_version:    '>=1.3.0',
 )
@@ -59,6 +59,11 @@ deps += dependency('tdom',
   version:          '>=0.9.6.4',
   default_options:  ['html5=disabled'],
 )
+
+# --- obstack: part of libc on glibc, a separate libobstack on musl ---
+if not cc.has_function('_obstack_begin', prefix: '#include <obstack.h>')
+  deps += cc.find_library('obstack')
+endif
 
 tea_test_deps += dependency('rl_json',    required: true)
 tea_test_deps += dependency('parse_args', required: true)
