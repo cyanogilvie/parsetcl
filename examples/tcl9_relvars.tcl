@@ -11,11 +11,20 @@
 # positions ($substitutions and the varName arguments of set, info exists,
 # upvar, ...) used where the current namespace isn't the global one.
 #
-#   tclsh tcl9_relvars.tcl ?-coverage? ?-all? ?-parsers file? path ...
+#   tclsh tcl9_relvars.tcl ?-coverage? ?-all? ?-parsers file? ?-nseval cmd=ns? ?-where cmds? path ...
+#
+# Two kinds of report:
+#   - relative qualified names (crypto::rsa::sha1) outside the global namespace
+#   - in namespace-level code (not a proc frame) outside ::, unqualified names
+#     the corpus declares global elsewhere (global / upvar #0) - Tcl 8 found
+#     those through the global fallback - and [global] statements, which do
+#     nothing outside a proc ("global" / "global-noop" kinds)
 #
 # Paths are files or directories (searched for *.tcl, *.tm and scripts with a
 # tclsh shebang).  -all also reports names that look like references to a
-# child namespace of the current one (likely fine).  -parsers sources a file
+# child namespace of the current one (likely fine).  -nseval cmd=ns declares
+# a command whose last argument runs as namespace-level code in ns (RL's
+# page_local=::page_local).  -parsers sources a file
 # that adds a codebase's own commands to ::parsetcl::cmd_parsers (repeatable).
 # -coverage lists braced
 # words that weren't deep-parsed, by command, to find cmd_parsers gaps.
@@ -39,6 +48,9 @@ proc ::parsetcl::subparse {mode word args} {
 
 namespace eval relvars {
 	variable subparse_failed	{}
+	variable globals			{}		;# names the corpus uses as global variables
+	variable nsvars				{}		;# ns -> names declared with [variable] there
+	variable nseval				{}		;# command -> namespace its last arg runs in, at namespace level
 	variable where				{}
 	variable known_ns	{:: 1}		;# namespaces created by namespace eval / qualified procs, anywhere in the corpus
 	variable hits		{}
@@ -109,13 +121,29 @@ namespace eval relvars {
 	}
 
 	#>>>
-	proc check_name {name kind node ctx} { #<<<
+	proc check_name {name kind node ctx {inproc 1}} { #<<<
 		variable hits
 		variable known_ns
 		variable file
 		variable collecting
+		variable globals
+		variable nsvars
 		if {$collecting} return
-		if {$name eq "" || [string match ::* $name] || [string first :: $name] < 0} return
+		if {$name eq "" || [string match ::* $name]} return
+		if {[string first :: $name] < 0} {
+			# Unqualified: only namespace-level code (not a proc frame) outside ::
+			# had the global fallback.  Report names the corpus uses as globals
+			# that this namespace doesn't declare itself.
+			set base	[regsub {\(.*$} $name {}]
+			if {
+				!$inproc && $ctx ni {:: <object> <unknown>} &&
+				[dict exists $globals $base] &&
+				!([dict exists $nsvars $ctx] && $base in [dict get $nsvars $ctx])
+			} {
+				lappend hits [list $file [line_of [domNode $node getAttribute idx]] $ctx global $base 0]
+			}
+			return
+		}
 		if {$ctx eq "::"} return
 		set first	[lindex [split [string map {:: \x1f} $name] \x1f] 0]
 		# A namespace eval'd/defined anywhere as <ctx>::<first> makes this a
@@ -125,11 +153,11 @@ namespace eval relvars {
 	}
 
 	#>>>
-	proc check_word {word kind ctx} { #<<<
+	proc check_word {word kind ctx {inproc 1}} { #<<<
 		variable dynamic
 		lassign [literal $word] static value
 		if {$static} {
-			check_name $value $kind $word $ctx
+			check_name $value $kind $word $ctx $inproc
 		} elseif {[string first :: [domNode $word asText]] >= 0} {
 			incr dynamic
 		}
@@ -219,21 +247,22 @@ namespace eval relvars {
 	}
 
 	#>>>
-	proc walk {node ctx} { #<<<
+	proc walk {node ctx {inproc 0}} { #<<<
 		# Walk $node's subtree, $ctx is the namespace scripts in it run in
-		# (an absolute namespace, or <object> for oo method bodies)
+		# (an absolute namespace, or <object> for oo method bodies), $inproc
+		# whether they run in a proc frame rather than at namespace level
 		foreach child [domNode $node childNodes] {
 			if {[domNode $child nodeType] ne "ELEMENT_NODE"} continue
 			switch -exact -- [domNode $child nodeName] {
 				var {
-					check_name [domNode $child getAttribute name ""] var $child $ctx
-					walk $child $ctx
+					check_name [domNode $child getAttribute name ""] var $child $ctx $inproc
+					walk $child $ctx $inproc
 				}
 				command {
-					walk_command $child $ctx
+					walk_command $child $ctx $inproc
 				}
 				default {
-					walk $child $ctx
+					walk $child $ctx $inproc
 				}
 			}
 		}
@@ -242,14 +271,26 @@ namespace eval relvars {
 	#>>>
 	proc body_ctx {cmd name ws ctx} { #<<<
 		# The namespace context for scripts (as/script children) in the words of
-		# this command: a dict word-index -> ctx for words that change it
+		# this command: a dict word-index -> ctx for words that change it.  Also
+		# sets frames in the caller: word-index -> 1 for proc-frame bodies, 0 for
+		# namespace-level scripts
+		upvar 1 frames frames
+		set frames	{}
 		set out	{}
+		variable nseval
+		if {[dict exists $nseval $name] && [llength $ws] > 1} {
+			set last	[expr {[llength $ws]-1}]
+			dict set out $last [dict get $nseval $name]
+			dict set frames $last 0
+			return $out
+		}
 		switch -exact -- $name {
 			"namespace" {
 				lassign [literal [lindex $ws 1]] s sub
 				if {$s && $sub eq "inscope" && [llength $ws] == 4} {
 					lassign [literal [lindex $ws 2]] s2 nsname
 					dict set out 3 [expr {$s2 ? [ns_join $ctx $nsname] : "<dynamic>"}]
+					dict set frames 3 0
 				}
 				if {$s && $sub eq "eval" && [llength $ws] == 4} {
 					lassign [literal [lindex $ws 2]] s2 nsname
@@ -259,6 +300,7 @@ namespace eval relvars {
 					} else {
 						dict set out 3 <dynamic>
 					}
+					dict set frames 3 0
 				}
 			}
 			"proc" {
@@ -274,24 +316,34 @@ namespace eval relvars {
 				} else {
 					dict set out 3 <dynamic>
 				}
+				dict set frames 3 1
 			}
-			"method" - "constructor" - "destructor" - "oo::class" - "oo::define" - "oo::objdefine" {
-				# Bodies of methods run in the object's namespace.  The class
-				# definition script itself runs in oo::define's context - its
-				# method/constructor commands are handled by their own names.
-				if {$name in {method constructor destructor}} {
-					dict set out [expr {[llength $ws]-1}] <object>
-				}
+			"method" - "constructor" - "destructor" {
+				# Bodies of methods run in the object's namespace, in a proc frame
+				dict set out [expr {[llength $ws]-1}] <object>
+				dict set frames [expr {[llength $ws]-1}] 1
 			}
 			"apply" {
 				# apply {args body ?ns?}: body runs in ns, default global
 				dict set out 1 <apply>
+				dict set frames 1 1
+			}
+			"list" {
+				# [list apply {args body ?ns?} ...]: a lambda built as a command
+				# prefix (deep-parsed by e.g. RL's cmd_parsers)
+				if {[llength $ws] < 3} return
+				lassign [literal [lindex $ws 1]] s w1
+				if {$s && $w1 eq "apply"} {
+					dict set out 2 <apply>
+					dict set frames 2 1
+				}
 			}
 			"oo::define" - "oo::objdefine" {
 				# oo::define cls method name args body | constructor args body | destructor body
 				lassign [literal [lindex $ws 2]] s kind
 				if {$s && $kind in {method constructor destructor} && [llength $ws] > 3} {
 					dict set out [expr {[llength $ws]-1}] <object>
+					dict set frames [expr {[llength $ws]-1}] 1
 				}
 			}
 			"after" - "thread::send" - "interp" {
@@ -304,22 +356,67 @@ namespace eval relvars {
 	}
 
 	#>>>
-	proc walk_command {cmd ctx} { #<<<
+	proc walk_command {cmd ctx {inproc 0}} { #<<<
 		variable unparsed
+		variable collecting
+		variable globals
+		variable nsvars
+		variable hits
+		variable file
 		set ws		[words $cmd]
 		set name	[domNode $cmd getAttribute name ""]
 		if {$name eq ""} {lassign [literal [lindex $ws 0]] - name}
 		set bare	[namespace tail $name]
 		if {[string match ::* $name] && [namespace qualifiers $name] in {"" "::tcl"}} {set name $bare}
 
+		if {$collecting} {
+			# Names code declares as globals: [global] and upvar #0 targets.
+			# (Not everything set at global level: page scripts run there, so
+			# that would include every request variable.)
+			switch -exact -- $name {
+				global {
+					foreach w [lrange $ws 1 end] {
+						lassign [literal $w] s v
+						if {$s} {dict set globals [string trimleft $v :] 1}
+					}
+				}
+				upvar {
+					lassign [literal [lindex $ws 1]] s lvl
+					if {$s && $lvl eq "#0"} {
+						foreach {o m} [lrange $ws 2 end] {
+							lassign [literal $o] s v
+							if {$s} {dict set globals [regsub {\(.*$} [string trimleft $v :] {}] 1}
+						}
+					}
+				}
+				variable {
+					if {$ctx ni {:: <object> <unknown>}} {
+						foreach {w -} [lrange $ws 1 end] {
+							lassign [literal $w] s v
+							if {$s} {dict lappend nsvars $ctx [regsub {\(.*$} $v {}]}
+						}
+					}
+				}
+			}
+		} elseif {$name eq "global" && !$inproc && $ctx ni {:: <object> <unknown>}} {
+			# [global] outside a proc does nothing: the names it lists resolved
+			# through the Tcl 8 global fallback
+			foreach w [lrange $ws 1 end] {
+				lassign [literal $w] s v
+				lappend hits [list $file [line_of [domNode $w getAttribute idx]] $ctx global-noop $v 0]
+			}
+		}
+
 		foreach w [var_words $cmd $name $ws] {
-			if {$w ne ""} {check_word $w varname $ctx}
+			if {$w ne ""} {check_word $w varname $ctx $inproc}
 		}
 
 		set ctxs	[body_ctx $cmd $name $ws $ctx]
 		set i	0
 		foreach w $ws {
 			set wctx	$ctx
+			set winproc	$inproc
+			if {[dict exists $frames $i]} {set winproc [dict get $frames $i]}
 			if {[dict exists $ctxs $i]} {set wctx [dict get $ctxs $i]}
 			if {$wctx eq "<apply>"} {
 				# lambda list {args body ?ns?}
@@ -345,7 +442,7 @@ namespace eval relvars {
 					puts "  unparsed: $file:[line_of [domNode $w getAttribute idx]] $name word $i: [string range [string trim [domNode $w getAttribute value]] 0 60]"
 				}
 			}
-			walk $w $wctx
+			walk $w $wctx $winproc
 			incr i
 		}
 	}
@@ -414,6 +511,13 @@ namespace eval relvars {
 			switch -exact -- $a {
 				-coverage	{set coverage 1}
 				-all		{set all 1}
+				-nseval		{
+					# cmd=ns: cmd's last argument runs as namespace-level code in ns
+					# (e.g. page_local=::page_local)
+					variable nseval
+					lassign [split [lindex $argv [incr i]] =] c n
+					dict set nseval $c $n
+				}
 				-where		{
 					# List each unparsed multi-line braced word of these commands
 					variable where	[split [lindex $argv [incr i]] ,]
