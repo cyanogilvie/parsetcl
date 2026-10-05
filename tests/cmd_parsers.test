@@ -1,0 +1,43 @@
+package require tcltest
+namespace import ::tcltest::*
+
+::tcltest::loadTestedCommands
+
+# The words of a command that the cmd_parsers deep-parse as scripts: for each
+# word of the first command in $script, 1 if it has an <as><script> parse
+proc script_words script { #<<<
+	set pt	[parsetcl parsetree $script]
+	set cmd	[lindex [parsetcl xpath [parsetcl node $pt] {script/command}] 0]
+	lmap w [parsetcl xpath $cmd word] {
+		parsetcl xpath $w {boolean(as/script)}
+	}
+}
+
+#>>>
+
+set n	0
+foreach {desc script exp} {
+	{oo::define script}					{oo::define C {method m {} {set x 1}}}		{0 0 1}
+	{oo::define method}					{oo::define C method m {a b} {set x 1}}		{0 0 0 0 0 1}
+	{oo::define constructor}			{oo::define C constructor {a} {set x 1}}	{0 0 0 0 1}
+	{oo::define destructor}				{oo::define C destructor {set x 1}}			{0 0 0 1}
+	{oo::objdefine method}				{oo::objdefine o method m {} {set x 1}}		{0 0 0 0 0 1}
+	{cflib::pclass create}				{cflib::pclass create C {method m {} {}}}	{0 0 0 1}
+	{thread::send}						{thread::send $t {set x 1}}					{0 0 1}
+	{thread::send -async with var}		{thread::send -async $t {set x 1} res}		{0 0 0 1 0}
+	{tsv::lock}							{tsv::lock arr {set x 1}}					{0 0 1}
+	{after ms}							{after 100 {set x 1}}						{0 0 1}
+	{after idle}						{after idle {set x 1}}						{0 0 1}
+	{after cancel isn't a script}		{after cancel {set x 1}}					{0 0 0}
+	{namespace code}					{namespace code {set x 1}}					{0 0 1}
+	{namespace inscope}					{namespace inscope ::foo {set x 1}}			{0 0 0 1}
+	{interp eval}						{interp eval $i {set x 1}}					{0 0 0 1}
+	{foreach with an odd word count}	{foreach x {set y 1}}						{0 0 0}
+	{foreach}							{foreach x $l {set y 1}}					{0 0 0 1}
+} {
+	test cmd_parsers-[incr n] $desc -body [list script_words $script] -result $exp
+}
+
+::tcltest::cleanupTests
+
+# vim: ft=tcl foldmethod=marker foldmarker=<<<,>>> shiftwidth=4 ts=4 noexpandtab

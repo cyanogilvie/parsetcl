@@ -134,28 +134,27 @@ namespace eval ::parsetcl {
 	}
 
 	proc resolve_name {namespace_context name} { #<<<
-		if {![domNode $name hasAttribute value]} {
-			# TODO: what?
-		}
-
+		# The fully qualified name $name (a <word> node) defines when it appears
+		# inside the namespace eval scripts whose name words are
+		# $namespace_context (outermost first); "" when that depends on
+		# substitutions
+		if {![domNode $name hasAttribute value]} {return ""}
 		set name_value	[domNode $name getAttribute value]
-		if {[string match ::* $name]} {
-			# First check if $name is fully qualified already
-			return $name
+		if {[string match ::* $name_value]} {
+			return $name_value
 		}
 
-		set qualifiers	[namespace qualifiers $name_value]
-		set tail		[namespace tail $name_value]
-		if {[string match ::* $qualifiers]} {
-			return ${qualifiers}::$name
-		}
-
-		foreach ns_context [lreverse $namespace_context] {
-			set ns	[type::get namespace_word $ns_context]
-			if {[json isnull $ns]} {
-				# ??
+		set ns	""
+		foreach ns_word $namespace_context {
+			if {![domNode $ns_word hasAttribute value]} {return ""}
+			set ns_value	[domNode $ns_word getAttribute value]
+			if {[string match ::* $ns_value]} {
+				set ns	[string trimright $ns_value :]
+			} else {
+				set ns	${ns}::$ns_value
 			}
 		}
+		return ${ns}::$name_value
 	}
 
 	#>>>
@@ -224,6 +223,7 @@ namespace eval ::parsetcl {
 		"foreach"	{cmd { #<<<
 			set words		[xpath $cmd word]
 			set iterators	[lrange $words 1 end-1]
+			if {[llength $iterators] == 0 || [llength $iterators] % 2} return	;# malformed, or {*}-expanded
 			foreach {varlist elements} $iterators {
 				#puts stderr "varlist: ($varlist), elements: ($elements)"
 				if {[domNode $varlist hasAttribute value]} {
@@ -348,21 +348,112 @@ namespace eval ::parsetcl {
 					subparse script [lindex $words 3]
 					context pop namespace
 				}
+				code {
+					if {[llength $words] == 3} {subparse script [lindex $words 2]}
+				}
+				inscope {
+					if {[llength $words] == 4} {
+						context push namespace [lindex $words 2]
+						subparse script [lindex $words 3]
+						context pop namespace
+					}
+				}
 			}
-			# TODO: namespace code, namespace inscope, etc
 			#>>>
 		} ::parsetcl}
 		"oo::define" {cmd { #<<<
+			# oo::define obj script, or the single-definition form:
+			# oo::define obj method name args body | constructor args body | destructor body
 			set words		[xpath $cmd word]
 			if {[llength $words] == 3} {
 				subparse script [lindex $words end]
+			} elseif {[llength $words] > 3 && [domNode [lindex $words 2] hasAttribute value]} {
+				switch -exact -- [domNode [lindex $words 2] getAttribute value] {
+					method {
+						if {[llength $words] == 6} {
+							subparse list   [lindex $words 4]
+							subparse script [lindex $words 5]
+						}
+					}
+					constructor {
+						if {[llength $words] == 5} {
+							subparse list   [lindex $words 3]
+							subparse script [lindex $words 4]
+						}
+					}
+					destructor {
+						if {[llength $words] == 4} {subparse script [lindex $words 3]}
+					}
+				}
 			}
 			#>>>
 		} ::parsetcl}
 		"oo::objdefine" {cmd { #<<<
+			# oo::objdefine obj script, or the single-definition form:
+			# oo::objdefine obj method name args body | constructor args body | destructor body
 			set words		[xpath $cmd word]
 			if {[llength $words] == 3} {
 				subparse script [lindex $words end]
+			} elseif {[llength $words] > 3 && [domNode [lindex $words 2] hasAttribute value]} {
+				switch -exact -- [domNode [lindex $words 2] getAttribute value] {
+					method {
+						if {[llength $words] == 6} {
+							subparse list   [lindex $words 4]
+							subparse script [lindex $words 5]
+						}
+					}
+					constructor {
+						if {[llength $words] == 5} {
+							subparse list   [lindex $words 3]
+							subparse script [lindex $words 4]
+						}
+					}
+					destructor {
+						if {[llength $words] == 4} {subparse script [lindex $words 3]}
+					}
+				}
+			}
+			#>>>
+		} ::parsetcl}
+		"cflib::pclass" {cmd { #<<<
+			# cflib::pclass create name body: an oo::class with properties
+			set words		[xpath $cmd word]
+			if {[llength $words] == 4 && [domNode [lindex $words 1] getAttribute value ""] eq "create"} {
+				subparse script [lindex $words 3]
+			}
+			#>>>
+		} ::parsetcl}
+		"thread::send" {cmd { #<<<
+			# thread::send ?-async? ?-head? id script ?varname?
+			set words		[lrange [xpath $cmd word] 1 end]
+			while {[llength $words] && [domNode [lindex $words 0] getAttribute value ""] in {-async -head}} {
+				set words	[lrange $words 1 end]
+			}
+			if {[llength $words] in {2 3}} {subparse script [lindex $words 1]}
+			#>>>
+		} ::parsetcl}
+		"tsv::lock" {cmd { #<<<
+			# tsv::lock array script (more args are concatenated: dynamic)
+			set words		[xpath $cmd word]
+			if {[llength $words] == 3} {subparse script [lindex $words 2]}
+			#>>>
+		} ::parsetcl}
+		"after" {cmd { #<<<
+			# after ms script, after idle script (more args are concatenated)
+			set words		[xpath $cmd word]
+			if {[llength $words] == 3} {
+				set first	[domNode [lindex $words 1] getAttribute value ""]
+				if {$first eq "idle" || [string is entier -strict $first]} {
+					subparse script [lindex $words 2]
+				}
+			}
+			#>>>
+		} ::parsetcl}
+		"interp" {cmd { #<<<
+			# interp eval path script (runs in another interpreter)
+			set words		[xpath $cmd word]
+			if {[llength $words] == 4 && [domNode [lindex $words 1] getAttribute value ""] eq "eval"} {
+				subparse script [lindex $words 3]
 			}
 			#>>>
 		} ::parsetcl}
