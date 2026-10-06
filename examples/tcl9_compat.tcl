@@ -13,6 +13,7 @@
 #     trace-old       trace variable/vdelete/vinfo
 #     bytelength      string bytelength
 #     enc-binary      -encoding binary / {}, encoding convert* binary
+#     enc-unknown     a literal encoding name this Tcl doesn't have (identity, ...)
 #     eofchar-pair    -eofchar {in out} (write side gone)
 #     inject          ::tcl::unsupported::inject
 #     pkg-tcl8        package require Tcl 8.x without a range (8.5 means 8.5-<9)
@@ -243,6 +244,7 @@ namespace eval compat {
 				set w	[lindex $ws $i+1]
 				if {$o eq "-encoding" && [static $w]} {
 					set e	[lit $w]
+					if {$e ni {binary {}} && [string tolower $e] ni [encoding names]} {hit enc-unknown $c [snippet $c]}
 					if {$e in {binary {}}} {
 						hit enc-binary $c [snippet $c]
 					} elseif {$n ne "source" && ![string match -nocase utf-8 $e] && $e ni {utf8 unicode} && !$has_profile} {
@@ -274,7 +276,12 @@ namespace eval compat {
 			}
 			encoding {
 				if {$sub in {convertfrom convertto}} {
-					if {[lindex $v 2] eq "binary"} {hit enc-binary $c [snippet $c]}
+					if {[lindex $v 2] eq "binary"} {
+						hit enc-binary $c [snippet $c]
+					} elseif {[static [lindex $ws 2]] && ![string match -* [lindex $v 2]] && [lindex $v 2] ni [encoding names]} {
+						# Encodings Tcl 9 dropped (identity, ...)
+						hit enc-unknown $c [snippet $c]
+					}
 					# utf-8 encodes every code point but lone surrogates
 					if {!$has_profile && !($sub eq "convertto" && [string match -nocase utf-8 [lindex $v 2]])} {hit convert $c [snippet $c]}
 				}
@@ -814,7 +821,7 @@ namespace eval compat {
 		puts "Braced literals parsed speculatively as code: $spec_count"
 		set by	{}
 		foreach h $hits {dict lappend by [lindex $h 0] $h}
-		set order {not-utf8 case puts-nonewline read-nonewline trace-old bytelength enc-binary eofchar-pair inject pkg-tcl8 load-prefix octal tilde glob-catch bytes convert chan-encoding clock-free int-wrap string-is-int tcl-vars astral varname-nest internal}
+		set order {not-utf8 case puts-nonewline read-nonewline trace-old bytelength enc-binary enc-unknown eofchar-pair inject pkg-tcl8 load-prefix octal tilde glob-catch bytes convert chan-encoding clock-free int-wrap string-is-int tcl-vars astral varname-nest internal}
 		foreach k [concat $order [lmap k [dict keys $by] {if {$k in $order} continue; set k}]] {
 			if {![dict exists $by $k]} continue
 			if {[llength $kinds] && $k ni $kinds} continue
