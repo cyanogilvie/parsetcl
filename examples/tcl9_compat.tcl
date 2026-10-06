@@ -251,7 +251,8 @@ namespace eval compat {
 						hit chan-encoding $c [snippet $c]
 					}
 				}
-				if {$o eq "-eofchar" && [static $w] && [string is list [lit $w]] && [llength [lit $w]] == 2} {
+				# Tcl 9 dropped the write side: {in out} with a non-empty out throws
+				if {$o eq "-eofchar" && [static $w] && [string is list [lit $w]] && [llength [lit $w]] == 2 && [lindex [lit $w] 1] ne ""} {
 					hit eofchar-pair $c [snippet $c]
 				}
 			}
