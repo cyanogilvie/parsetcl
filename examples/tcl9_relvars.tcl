@@ -11,7 +11,7 @@
 # positions ($substitutions and the varName arguments of set, info exists,
 # upvar, ...) used where the current namespace isn't the global one.
 #
-#   tclsh tcl9_relvars.tcl ?-coverage? ?-all? ?-parsers file? ?-nseval cmd=ns? ?-where cmds? path ...
+#   tclsh tcl9_relvars.tcl ?-coverage? ?-all? ?-parsers file? ?-nseval cmd=ns? ?-proc cmds? ?-where cmds? path ...
 #
 # Two kinds of report:
 #   - relative qualified names (crypto::rsa::sha1) outside the global namespace
@@ -24,7 +24,9 @@
 # tclsh shebang).  -all also reports names that look like references to a
 # child namespace of the current one (likely fine).  -nseval cmd=ns declares
 # a command whose last argument runs as namespace-level code in ns (RL's
-# page_local=::page_local).  -parsers sources a file
+# page_local=::page_local), -proc cmd,cmd commands that define procs (their
+# last argument is a proc body: RL's rpc_proc, rl_formproc, ...).  -parsers
+# sources a file
 # that adds a codebase's own commands to ::parsetcl::cmd_parsers (repeatable).
 # -coverage lists braced
 # words that weren't deep-parsed, by command, to find cmd_parsers gaps.
@@ -50,7 +52,8 @@ namespace eval relvars {
 	variable subparse_failed	{}
 	variable globals			{}		;# names the corpus uses as global variables
 	variable nsvars				{}		;# ns -> names declared with [variable] there
-	variable nseval				{}		;# command -> namespace its last arg runs in, at namespace level
+	variable nseval				{}
+	variable proclike			{}		;# commands that define a proc: name ... body (body runs in a proc frame)		;# command -> namespace its last arg runs in, at namespace level
 	variable where				{}
 	variable known_ns	{:: 1}		;# namespaces created by namespace eval / qualified procs, anywhere in the corpus
 	variable hits		{}
@@ -278,6 +281,17 @@ namespace eval relvars {
 		set frames	{}
 		set out	{}
 		variable nseval
+		variable proclike
+		if {$name in $proclike && [llength $ws] > 2} {
+			# name ... body ?...?: the body (the last word the cmd_parsers parsed
+			# as a script) is a proc body in the current namespace
+			for {set j [expr {[llength $ws]-1}]} {$j > 1} {incr j -1} {
+				if {[llength [parsetcl xpath [lindex $ws $j] as/script]]} break
+			}
+			dict set out $j $ctx
+			dict set frames $j 1
+			return $out
+		}
 		if {[dict exists $nseval $name] && [llength $ws] > 1} {
 			set last	[expr {[llength $ws]-1}]
 			dict set out $last [dict get $nseval $name]
@@ -517,6 +531,12 @@ namespace eval relvars {
 					variable nseval
 					lassign [split [lindex $argv [incr i]] =] c n
 					dict set nseval $c $n
+				}
+				-proc		{
+					# cmd: a command that defines a proc (name ... body), so its
+					# last argument runs in a proc frame (RL's rpc_proc, ...)
+					variable proclike
+					lappend proclike {*}[split [lindex $argv [incr i]] ,]
 				}
 				-where		{
 					# List each unparsed multi-line braced word of these commands
