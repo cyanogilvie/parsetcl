@@ -576,7 +576,8 @@ namespace eval relvars {
 		set dynamic		0
 		foreach {fn text pt} $trees {
 			set file		$fn
-			set nl_offsets	[lmap m [regexp -all -indices -inline \n $text] {lindex $m 0}]
+			# parsetcl's idx attributes are utf-8 byte offsets
+			set nl_offsets	[lmap m [regexp -all -indices -inline \n [encoding convertto utf-8 $text]] {lindex $m 0}]
 			walk [parsetcl node $pt] ::
 		}
 
