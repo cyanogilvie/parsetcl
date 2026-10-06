@@ -4,12 +4,13 @@ namespace import ::tcltest::*
 ::tcltest::loadTestedCommands
 
 # The words of a command that the cmd_parsers deep-parse as scripts: for each
-# word of the first command in $script, 1 if it has an <as><script> parse
+# word of the first command in $script, 1 if it (or a word nested in it: a
+# lambda, a [string map] template) has an <as><script> parse
 proc script_words script { #<<<
 	set pt	[parsetcl parsetree $script]
 	set cmd	[lindex [parsetcl xpath [parsetcl node $pt] {script/command}] 0]
 	lmap w [parsetcl xpath $cmd word] {
-		parsetcl xpath $w {boolean(as/script)}
+		parsetcl xpath $w {boolean(.//as/script)}
 	}
 }
 
@@ -34,6 +35,11 @@ foreach {desc script exp} {
 	{interp eval}						{interp eval $i {set x 1}}					{0 0 0 1}
 	{foreach with an odd word count}	{foreach x {set y 1}}						{0 0 0}
 	{foreach}							{foreach x $l {set y 1}}					{0 0 0 1}
+	{thread::create}					{thread::create -preserved {set x 1}}		{0 0 1}
+	{thread::create no script}			{thread::create -joinable}					{0 0}
+	{thread::send string map template}	{thread::send $t [string map {%a% 1} {set x %a%}]}	{0 0 1}
+	{tpool::create -initcmd}			{tpool::create -minworkers 1 -initcmd {set x 1}}	{0 0 0 0 1}
+	{coroutine apply}					{coroutine c apply {{} {set x 1}}}			{0 0 0 1}
 } {
 	test cmd_parsers-[incr n] $desc -body [list script_words $script] -result $exp
 }

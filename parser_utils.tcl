@@ -30,6 +30,32 @@ namespace eval ::parsetcl {
 	}
 
 	#>>>
+	proc script_word word { #<<<
+		# Subparse $word as a script if it's a literal, or a script template
+		# built with [string map $map {literal script}] (a common way to pass
+		# code to another thread or interp with values substituted in)
+		if {[domNode $word hasAttribute value]} {
+			subparse script $word
+			return
+		}
+		set tmpl	[xpath $word {
+			self::*[count(*[not(self::syntax)])=1]/script[count(command)=1]/command[
+				@name='string' and count(word)=4 and word[2]/@value='map'
+			]/word[4][@value]
+		}]
+		if {[llength $tmpl] == 1} {subparse script [lindex $tmpl 0]}
+	}
+
+	#>>>
+	proc lambda_word word { #<<<
+		# Subparse the body of the lambda in $word ({args body ?ns?})
+		if {![domNode $word hasAttribute value]} return
+		subparse list $word
+		set lambda_words	[xpath $word as/list/word]
+		if {[llength $lambda_words] in {2 3}} {subparse script [lindex $lambda_words 1]}
+	}
+
+	#>>>
 	proc parse_command {cmd name} { #<<<
 		variable cmd_parsers
 
@@ -429,7 +455,31 @@ namespace eval ::parsetcl {
 			while {[llength $words] && [domNode [lindex $words 0] getAttribute value ""] in {-async -head}} {
 				set words	[lrange $words 1 end]
 			}
-			if {[llength $words] in {2 3}} {subparse script [lindex $words 1]}
+			if {[llength $words] in {2 3}} {script_word [lindex $words 1]}
+			#>>>
+		} ::parsetcl}
+		"thread::create" {cmd { #<<<
+			# thread::create ?-joinable? ?-preserved? ?script?
+			set words		[lrange [xpath $cmd word] 1 end]
+			while {[llength $words] && [domNode [lindex $words 0] getAttribute value ""] in {-joinable -preserved}} {
+				set words	[lrange $words 1 end]
+			}
+			if {[llength $words] == 1} {script_word [lindex $words 0]}
+			#>>>
+		} ::parsetcl}
+		"tpool::create" {cmd { #<<<
+			# tpool::create ?-initcmd script? ?-exitcmd script? ?-option value ...?
+			foreach {opt val} [lrange [xpath $cmd word] 1 end] {
+				if {$val ne "" && [domNode $opt getAttribute value ""] in {-initcmd -exitcmd}} {script_word $val}
+			}
+			#>>>
+		} ::parsetcl}
+		"coroutine" {cmd { #<<<
+			# coroutine name apply lambda ?arg ...?
+			set words		[xpath $cmd word]
+			if {[llength $words] >= 4 && [domNode [lindex $words 2] getAttribute value ""] eq "apply"} {
+				lambda_word [lindex $words 3]
+			}
 			#>>>
 		} ::parsetcl}
 		"tsv::lock" {cmd { #<<<
